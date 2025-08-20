@@ -3,16 +3,33 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Pinball Stage 1</title>
-<style>html,body{margin:0;height:100%;background:#0b0d10;overflow:hidden}#ui{position:fixed;left:12px;bottom:12px;color:#cfd8dc;font:12px system-ui}</style>
+<title>Pinball – Diagnostic Build</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d10;overflow:hidden}
+  #ui{position:fixed;left:12px;bottom:12px;color:#cfd8dc;font:12px system-ui;z-index:3}
+  #err{position:fixed;top:0;left:0;right:0;background:#300;color:#fff;font:12px/1.4 system-ui;padding:6px;z-index:4;display:none;max-height:40vh;overflow:auto}
+</style>
 </head>
 <body>
-<div id="ui">S: pull plunger, release to launch · R: reset</div>
-<script type="module">
-import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=4";
-import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=4";
+<div id="err"></div>
+<div id="ui">S: pull plunger, release to launch · R: reset · (diag)</div>
 
-// --- three ---
+<script type="module">
+/* ---- Debug console toggle (?debug) ---- */
+if (location.search.includes('debug')) {
+  const s=document.createElement('script'); s.src="https://cdn.jsdelivr.net/npm/eruda@3"; 
+  s.onload=()=>eruda.init(); document.body.appendChild(s);
+}
+
+/* ---- Error overlay helpers ---- */
+const errBox = document.getElementById('err');
+function showErr(msg){ errBox.style.display='block'; errBox.textContent += msg + "\n"; }
+window.addEventListener('error', e=>showErr('Error: '+e.message));
+window.addEventListener('unhandledrejection', e=>showErr('Promise: '+(e.reason?.message||e.reason)));
+
+/* ---- THREE: always show something ---- */
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=2025-08-20a";
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0d10);
 const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
@@ -22,87 +39,110 @@ const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// helpers (leave visible for sanity)
+// Helpers + “can’t-go-black” cube
 scene.add(new THREE.AxesHelper(3));
+const keepCube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({color:0xff5555}));
+keepCube.position.set(0,1,0);
+scene.add(keepCube);
 
-// --- cannon ---
-const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
-world.broadphase = new CANNON.SAPBroadphase(world);
-world.allowSleep = true;
+// Resize
+addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
-// tilt the “world gravity” like a pinball table
-const tiltRad = THREE.MathUtils.degToRad(6);
-world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
-
-// contact materials
-const matBall  = new CANNON.Material('ball');
-const matTable = new CANNON.Material('table');
-world.addContactMaterial(new CANNON.ContactMaterial(matBall, matTable, { friction:0.2, restitution:0.2 }));
-
-// table (visual plane + infinite physics plane)
-const tableW=12, tableH=20;
-const table = new THREE.Mesh(new THREE.PlaneGeometry(tableW, tableH), new THREE.MeshBasicMaterial({color:0x3a4a6a}));
-table.rotation.x = -Math.PI/2;
-scene.add(table);
-
-const ground = new CANNON.Body({ mass:0, material:matTable, shape:new CANNON.Plane() });
-ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
-world.addBody(ground);
-
-// ball
-const ballR = 0.35;
-const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(ballR, 24, 16), new THREE.MeshBasicMaterial({color:0xffffff}));
-scene.add(ballMesh);
-const ballBody = new CANNON.Body({ mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01 });
-ballBody.addShape(new CANNON.Sphere(ballR));
-world.addBody(ballBody);
-
-function resetBall(){
-  ballBody.position.set(4.2, 2.0, -7.5);
-  ballBody.velocity.set(0,0,0);
-  ballBody.angularVelocity.set(0,0,0);
-}
-resetBall();
-
-// simple launcher (just an impulse when releasing S)
-let pulling=false, plungerPower=0;
-addEventListener('keydown', e=>{
-  if(e.code==='KeyS') pulling=true;
-  if(e.code==='KeyR') resetBall();
-});
-addEventListener('keyup', e=>{
-  if(e.code==='KeyS'){
-    pulling=false;
-    ballBody.applyImpulse(
-      new CANNON.Vec3(-Math.sin(tiltRad)*plungerPower*0.6, Math.cos(tiltRad)*plungerPower*0.6, plungerPower),
-      ballBody.position
-    );
-    plungerPower=0;
+/* ---- Try to load Cannon with fallbacks ---- */
+let CANNON;
+async function loadCannon(){
+  const urls = [
+    "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=2025-08-20a",
+    "https://esm.sh/cannon-es@0.20.0?bundle&target=es2020",
+    "https://ga.jspm.io/npm:cannon-es@0.20.0/dist/cannon-es.js"
+  ];
+  for (const u of urls) {
+    try {
+      const mod = await import(u);
+      return mod.default || mod; // unpkg default export vs others
+    } catch (e) {
+      showErr("Cannon load failed: " + u + " :: " + (e?.message||e));
+    }
   }
-});
+  return null;
+}
 
-// loop
-let last=performance.now(); const fixed=1/120;
-function loop(t){
-  const dt=Math.min((t-last)/1000, 0.033); last=t;
-  if(pulling) plungerPower=Math.min(plungerPower+50*dt, 40);
-  world.step(fixed, dt, 8);
+const CANNON_MOD = await loadCannon();
 
-  // sync mesh
-  ballMesh.position.copy(ballBody.position);
-  ballMesh.quaternion.copy(ballBody.quaternion);
+/* ---- If Cannon loaded, set up physics stage-1 (table + ball) ---- */
+let pulling=false, plungerPower=0;
+if (CANNON_MOD) {
+  const CANNON = CANNON_MOD;
 
-  renderer.render(scene, camera);
+  const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
+  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.allowSleep = true;
+
+  // Tilt gravity to simulate pinball slope
+  const tiltRad = THREE.MathUtils.degToRad(6);
+  world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
+
+  // Materials
+  const matBall  = new CANNON.Material('ball');
+  const matTable = new CANNON.Material('table');
+  world.addContactMaterial(new CANNON.ContactMaterial(matBall, matTable, { friction:0.2, restitution:0.2 }));
+
+  // Visual table + infinite physics plane
+  const tableW=12, tableH=20;
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(tableW, tableH), new THREE.MeshBasicMaterial({color:0x3a4a6a}));
+  table.rotation.x = -Math.PI/2; scene.add(table);
+  const ground = new CANNON.Body({ mass:0, material:matTable, shape:new CANNON.Plane() });
+  ground.quaternion.setFromEuler(-Math.PI/2, 0, 0); world.addBody(ground);
+
+  // Ball
+  const ballR=0.35;
+  const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(ballR,24,16), new THREE.MeshBasicMaterial({color:0xffffff}));
+  scene.add(ballMesh);
+  const ballBody = new CANNON.Body({ mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01 });
+  ballBody.addShape(new CANNON.Sphere(ballR));
+  world.addBody(ballBody);
+
+  function resetBall(){
+    ballBody.position.set(4.2, 2.0, -7.5);
+    ballBody.velocity.set(0,0,0);
+    ballBody.angularVelocity.set(0,0,0);
+  }
+  resetBall();
+
+  addEventListener('keydown', e=>{
+    if(e.code==='KeyS') pulling=true;
+    if(e.code==='KeyR') resetBall();
+  });
+  addEventListener('keyup', e=>{
+    if(e.code==='KeyS'){
+      pulling=false;
+      ballBody.applyImpulse(
+        new CANNON.Vec3(-Math.sin(tiltRad)*plungerPower*0.6, Math.cos(tiltRad)*plungerPower*0.6, plungerPower),
+        ballBody.position
+      );
+      plungerPower=0;
+    }
+  });
+
+  // Animate with physics
+  let last=performance.now(); const fixed=1/120;
+  function loop(t){
+    const dt=Math.min((t-last)/1000, 0.033); last=t;
+    keepCube.rotation.y = t*0.0015; keepCube.rotation.x = t*0.001; // still spins so you see frames
+    if(pulling) plungerPower=Math.min(plungerPower+50*dt, 40);
+    world.step(fixed, dt, 8);
+    ballMesh.position.copy(ballBody.position);
+    ballMesh.quaternion.copy(ballBody.quaternion);
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+} else {
+  showErr("Cannon never loaded. Physics disabled; showing cube only.");
+  // Animate cube only
+  function loop(t){ keepCube.rotation.y = t*0.0015; keepCube.rotation.x = t*0.001; renderer.render(scene, camera); requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
-
-// resize
-addEventListener('resize', ()=>{
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
 </script>
 </body>
 </html>
