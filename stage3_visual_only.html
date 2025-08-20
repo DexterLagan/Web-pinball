@@ -31,16 +31,31 @@ try{
   c.style.position='fixed'; c.style.left='0'; c.style.top='0'; c.style.zIndex='10000'; c.style.border='8px solid lime';
   renderer.setClearColor(0xff00ff,1);
 
-  function sizeNow(src){
-    const vw = Math.round(document.documentElement.clientWidth  || window.innerWidth  || 1);
-    const vh = Math.round(document.documentElement.clientHeight || window.innerHeight || 1);
-    renderer.setPixelRatio(Math.min(2, devicePixelRatio||1));
-    renderer.setSize(vw,vh,false);
-    camera.aspect=vw/Math.max(1,vh); camera.updateProjectionMatrix();
-    const r=c.getBoundingClientRect();
-    log(`resize ${src}: rect=${Math.round(r.width)}x${Math.round(r.height)}`);
-  }
-  sizeNow('boot'); addEventListener('resize',()=>sizeNow('resize'));
+// ✅ iPad-safe canvas sizing: CSS = viewport px, drawing buffer = same (no DPR scaling)
+function sizeNow(src){
+  const vw = Math.round(document.documentElement.clientWidth  || window.innerWidth  || 1);
+  const vh = Math.round(document.documentElement.clientHeight || window.innerHeight || 1);
+
+  // 1) lock pixel ratio to 1 so the buffer doesn't double
+  renderer.setPixelRatio(1);
+
+  // 2) update style size (CSS pixels)
+  const c = renderer.domElement;
+  c.style.width  = vw + 'px';
+  c.style.height = vh + 'px';
+
+  // 3) ask three.js to also update style (third arg = true)
+  renderer.setSize(vw, vh, true);
+
+  // 4) camera
+  camera.aspect = vw / Math.max(1, vh);
+  camera.updateProjectionMatrix();
+
+  const rect = c.getBoundingClientRect();
+  log(`resize ${src}: vw=${vw}, vh=${vh} | rect=${Math.round(rect.width)}x${Math.round(rect.height)} @ (${Math.round(rect.left)},${Math.round(rect.top)})`);
+}
+sizeNow('boot');
+addEventListener('resize', ()=>sizeNow('resize'));
 
   // Big red cube you cannot miss
   const cube=new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({color:0xff5555}));
