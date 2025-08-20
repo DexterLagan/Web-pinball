@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b24";
+const BUILD = "b25";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -270,8 +270,8 @@ const speed = 14;  // snappy flip
 });
 
 addEventListener('keyup', e=>{
-  if (e.code === 'ShiftLeft')  leftFlip.setTarget(false);
-  if (e.code === 'ShiftRight') rightFlip.setTarget(false);
+  if (e.code === 'ShiftLeft')  rightFlip.setTarget(false);
+  if (e.code === 'ShiftRight') leftFlip.setTarget(false);
 });
 
   // ---- in LOOP: animate angles + sync KINEMATIC bodies ----
