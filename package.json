@@ -1,0 +1,16 @@
+{
+  "name": "web-pinball",
+  "version": "1.0.0",
+  "description": "The essence of Pinball.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cannon": "^0.6.2",
+    "three": "^0.161.0"
+  }
+}
