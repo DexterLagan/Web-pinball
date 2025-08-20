@@ -48,7 +48,7 @@ try {
 
 /*** THREE scene ***/
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x15202b);
+// scene.background = new THREE.Color(0x15202b);
 
 const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
 // Angle down so the table is guaranteed in view
@@ -56,32 +56,30 @@ camera.position.set(0, 16, 14);
 camera.lookAt(0,0,0);
 
 // --- renderer ---
-const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, preserveDrawingBuffer:true });
 document.body.appendChild(renderer.domElement);
 
-// Make the canvas obvious and sized explicitly
+// Put canvas ABOVE all overlays while we debug
 renderer.domElement.style.position = 'fixed';
 renderer.domElement.style.left = '0';
 renderer.domElement.style.top = '0';
+renderer.domElement.style.zIndex = '9999';
 renderer.domElement.style.border = '4px solid lime';
-renderer.domElement.style.zIndex = '1';
 
-// Set DPR and size using visualViewport (iPad-safe), with logs
+// Bright magenta clear so even an empty frame is visible
+renderer.setClearColor(0xff00ff, 1);
+
+// Size using visualViewport (iPad-safe), and log values
 function sizeNow(src){
   const vw = (window.visualViewport ? window.visualViewport.width  : window.innerWidth)  || 1;
   const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) || 1;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  // CSS pixels (so the lime border looks correct)
-  renderer.domElement.style.width  = vw + 'px';
-  renderer.domElement.style.height = vh + 'px';
-  // Actual drawing buffer
   renderer.setPixelRatio(dpr);
   renderer.setSize(vw, vh, false);
   camera.aspect = vw / vh;
   camera.updateProjectionMatrix();
   log(`↔️ resize from ${src}: vw=${vw}, vh=${vh}, dpr=${dpr}`);
 }
-// call once now, then on any viewport change
 sizeNow('boot');
 addEventListener('resize', ()=>sizeNow('window.resize'));
 if (window.visualViewport) {
@@ -96,6 +94,9 @@ const sanityCube = new THREE.Mesh(
 );
 sanityCube.position.set(0,1,0);
 scene.add(sanityCube);
+
+// TEMP: draw ONLY the cube for a couple frames to prove rendering
+let diagFrames = 60; // ~1 second at 60fps
 
 // Axes helper
 scene.add(new THREE.AxesHelper(3));
@@ -245,21 +246,31 @@ document.getElementById('rightTouch').addEventListener('pointerup',   e=>onTouch
 /*** Loop (with error guard) ***/
 let last=performance.now(); const fixed=1/120;
 function loop(t){
-  try{
-    const dt=Math.min((t-last)/1000,0.033); last=t;
-    sanityCube.rotation.y = t*0.0015; sanityCube.rotation.x = t*0.0010; // prove frames
-    if(pulling) plungerPower = Math.min(plungerPower + 50*dt, 40);
-    world.step(fixed, dt, 8);
+  const dt=Math.min((t-last)/1000,0.033); last=t;
 
-    ballMesh.position.copy(ballBody.position);
-    ballMesh.quaternion.copy(ballBody.quaternion);
-    leftFlip.mesh.position.copy(leftFlip.body.position);
-    leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
-    rightFlip.mesh.position.copy(rightFlip.body.position);
-    rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
+  // Always spin the sanity cube so you can SEE frames
+  sanityCube.rotation.y = t*0.0015;
+  sanityCube.rotation.x = t*0.0010;
 
+  if (diagFrames > 0) {
+    diagFrames--;
     renderer.render(scene, camera);
-  } catch(err){ showErr('Loop error: ' + err.message); }
+    requestAnimationFrame(loop);
+    return; // skip physics + rest of scene for now
+  }
+
+  // ---- original physics + sync below ----
+  if(pulling) plungerPower = Math.min(plungerPower + 50*dt, 40);
+  world.step(fixed, dt, 8);
+
+  ballMesh.position.copy(ballBody.position);
+  ballMesh.quaternion.copy(ballBody.quaternion);
+  leftFlip.mesh.position.copy(leftFlip.body.position);
+  leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
+  rightFlip.mesh.position.copy(rightFlip.body.position);
+  rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
+
+  renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
