@@ -20,13 +20,33 @@ if (location.search.includes('debug')) { const s=document.createElement('script'
 const errBox=document.getElementById('err'); const showErr=m=>{errBox.style.display='block'; errBox.textContent+=(m+"\n");};
 addEventListener('error',e=>showErr('Error: '+e.message)); addEventListener('unhandledrejection',e=>showErr('Promise: '+(e.reason?.message||e.reason)));
 
-import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=s2";
-import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=s2";
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=s2b";
+import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js?v=s2b";
+import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=s2b";
 
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0b0d10);
 const camera=new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
 camera.position.set(0,10,20); camera.lookAt(0,0,0);
-const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); document.body.appendChild(renderer.domElement);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); 
+document.body.appendChild(renderer.domElement);
+
+// Camera controls (to inspect the scene)
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0, 0);
+controls.update();
+
+// Always-visible sanity cube (if you see this, rendering works)
+const sanityCube = new THREE.Mesh(
+  new THREE.BoxGeometry(1,1,1),
+  new THREE.MeshBasicMaterial({ color: 0xff5555 })
+);
+sanityCube.position.set(0, 1, 0);
+scene.add(sanityCube);
+
+// Make the background a touch lighter for contrast (temporary)
+scene.background = new THREE.Color(0x17202a);
+
 scene.add(new THREE.AxesHelper(3));
 
 const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)}); world.broadphase=new CANNON.SAPBroadphase(world); world.allowSleep=true;
@@ -89,10 +109,19 @@ addEventListener('keyup', e=>{
 let last=performance.now(); const fixed=1/120;
 function loop(t){
   const dt=Math.min((t-last)/1000,0.033); last=t;
+
+  // Spin the sanity cube so you always see frame updates
+  sanityCube.rotation.y = t * 0.0015;
+  sanityCube.rotation.x = t * 0.0010;
+
   if(pulling) plungerPower=Math.min(plungerPower+50*dt, 40);
   world.step(fixed, dt, 8);
-  ballMesh.position.copy(ballBody.position); ballMesh.quaternion.copy(ballBody.quaternion);
-  renderer.render(scene,camera); requestAnimationFrame(loop);
+  ballMesh.position.copy(ballBody.position);
+  ballMesh.quaternion.copy(ballBody.quaternion);
+
+  controls.update();
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
