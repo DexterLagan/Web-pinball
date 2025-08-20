@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b25";
+const BUILD = "b26";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -97,6 +97,12 @@ log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 
 // ---- TABLE VISUAL ----
 const tableW = 12, tableH = 20;
+
+// Launcher lane spawn (bottom-right)
+const LAUNCH_X =  tableW/2 - 1.8;  // ≈ +4.2 (near right wall)
+const LAUNCH_Z = -tableH/2 + 2.5;  // ≈ -7.5 (near bottom)
+const LAUNCH_Y =  0.8;             // a bit above the plane
+
 const table = new THREE.Mesh(
   new THREE.PlaneGeometry(tableW, tableH),
   new THREE.MeshBasicMaterial({ color: 0x3a4a6a })
@@ -144,6 +150,22 @@ ballBody.addShape(new CANNON.Sphere(r));
 ballBody.allowSleep = false;
 world.addBody(ballBody);
 
+function placeBallAtLauncher(){
+  ballBody.position.set(LAUNCH_X, LAUNCH_Y, LAUNCH_Z);
+  ballBody.velocity.set(0,0,0);
+  ballBody.angularVelocity.set(0,0,0);
+  ballBody.wakeUp && ballBody.wakeUp();
+}
+
+// Fire up-table (toward +Z). Give it a small upward component so it clears bumps.
+function launchBall(power = 16){
+  placeBallAtLauncher();
+  // Up-table is +Z; add a tiny Y component so it doesn't scrape
+  const iz = power;                       // forward
+  const iy = Math.max(0.5, power * 0.10); // slight lift
+  ballBody.applyImpulse(new CANNON.Vec3(0, iy, iz), ballBody.position);
+}
+
 function reset(){ 
   ballBody.position.set(4.2, 2.0, -7.5);
   ballBody.velocity.set(0,0,0);
@@ -153,14 +175,35 @@ reset();
 
   // simple plunger + reset
   let pulling=false, power=0;
-  addEventListener('keydown', e=>{ if(e.code==='KeyS') pulling=true; if(e.code==='KeyR') reset(); });
-  addEventListener('keyup', e=>{
-    if(e.code==='KeyS'){
-      pulling=false;
-      ballBody.applyImpulse(new CANNON.Vec3(-Math.sin(tiltRad)*power*0.6, Math.cos(tiltRad)*power*0.6, power), ballBody.position);
-      power=0;
+
+  // addEventListener('keydown', e=>{ if(e.code==='KeyS') pulling=true; if(e.code==='KeyR') reset(); });
+  // addEventListener('keyup', e=>{
+  //   if(e.code==='KeyS'){
+  //     pulling=false;
+  //     ballBody.applyImpulse(new CANNON.Vec3(-Math.sin(tiltRad)*power*0.6, Math.cos(tiltRad)*power*0.6, power), ballBody.position);
+  //     power=0;
+  //   }
+  // });
+
+  let lastLaunch = 0;
+
+addEventListener('keydown', e=>{
+  if (e.code === 'ShiftLeft')  leftFlip.setTarget(true);
+  if (e.code === 'ShiftRight') rightFlip.setTarget(true);
+
+  if (e.code === 'Space') {
+    const now = performance.now();
+    if (now - lastLaunch > 300) {   // simple cooldown to avoid spam
+      launchBall(18);               // tweak 14–22 to taste
+      lastLaunch = now;
     }
-  });
+  }
+});
+
+addEventListener('keyup', e=>{
+  if (e.code === 'ShiftLeft')  leftFlip.setTarget(false);
+  if (e.code === 'ShiftRight') rightFlip.setTarget(false);
+});
 
   // keep power increasing each frame while held
   ballBody._plungerState = { pulling:false, power:0 };
