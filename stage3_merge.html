@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Stage 3 MERGE — phased bring-up</title>
+<style>
+  html,body{margin:0;height:100dvh;width:100vw;background:#000;overflow:hidden}
+  #log{position:fixed;top:0;left:0;right:0;background:#111;color:#9ee;font:12px/1.5 system-ui;padding:8px;z-index:10;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div id="log">Booting…</div>
+
+<!-- Cannon UMD → global CANNON -->
+<script src="./vendor/cannon.min.js"></script>
+
+<script type="module">
+const BUILD = "b10";
+const params = new URLSearchParams(location.search);
+const PHASE = Number(params.get('phase') || 1); // 1..4
+const logEl = document.getElementById('log');
+const log = m => { logEl.textContent += "\n" + m; };
+log("BUILD: " + BUILD + "  |  PHASE: " + PHASE);
+
+let THREE;
+try {
+  THREE = await import('./vendor/three.min.js');   // local ESM you vendored
+  log('THREE r'+THREE.REVISION+' loaded');
+} catch(e) { log('❌ THREE import failed: '+e.message); throw e; }
+
+if (!window.CANNON) { log('❌ CANNON missing (check ./vendor/cannon.min.js)'); throw new Error('No CANNON'); }
+const CANNON = window.CANNON;
+
+// --- scene
+const scene = new THREE.Scene(); // leave background null so clearColor shows
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
+// start centered on the sanity cube
+camera.position.set(0, 1.5, 3); camera.lookAt(0, 1, 0);
+
+// --- renderer
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, preserveDrawingBuffer:true });
+document.body.appendChild(renderer.domElement);
+const c = renderer.domElement;
+c.style.position = 'fixed'; c.style.left='0'; c.style.top='0';
+c.style.zIndex = '1';               // keep log on top (z=10)
+c.style.border = '4px solid lime';
+c.style.background = '#ff00ff';     // CSS background (visible even before GL draw)
+renderer.setClearColor(0xff00ff, 1);// GL clear
+
+// iPad-safe sizing (CSS px, DPR=1)
+function sizeNow(src){
+  const vw = Math.round(document.documentElement.clientWidth  || innerWidth  || 1);
+  const vh = Math.round(document.documentElement.clientHeight || innerHeight || 1);
+  renderer.setPixelRatio(1);
+  c.style.width  = vw + 'px';
+  c.style.height = vh + 'px';
+  renderer.setSize(vw, vh, true);
+  camera.aspect = vw / Math.max(1, vh);
+  camera.updateProjectionMatrix();
+  const r = c.getBoundingClientRect();
+  log(`↔️ ${src}: css=${vw}x${vh} | rect=${Math.round(r.width)}x${Math.round(r.height)} @ (${Math.round(r.left)},${Math.round(r.top)})`);
+}
+sizeNow('boot'); addEventListener('resize', ()=>sizeNow('resize'));
+
+// sanity cube + grid (always on so we SEE frames)
+const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({ color: 0xff5555 }));
+cube.position.set(0,1,0); scene.add(cube);
+scene.add(new THREE.GridHelper(10,10,0x444444,0x444444));
+
+// ---- PHYSICS (phase>=2)
+let world, tiltRad, matBall, matTable, matPegs, ballMesh, ballBody, leftFlip, rightFlip;
+
+if (PHASE >= 2) {
+  world = new CANNON.World();
+  world.gravity.set(0,-9.82,0);
+  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.allowSleep = true;
+
+  tiltRad = 6*Math.PI/180;
+  world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
+
+  matBall  = new CANNON.Material('ball');
+  matTable = new CANNON.Material('table');
+  matPegs  = new CANNON.Material('pegs');
+  world.addContactMaterial(new CANNON.ContactMaterial(matBall,  matTable, { friction:0.2, restitution:0.2 }));
+  world.addContactMaterial(new CANNON.ContactMaterial(matBall,  matPegs,  { friction:0.0, restitution:0.85 }));
+
+  // table plane (visual + infinite ground)
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(12,20), new THREE.MeshBasicMaterial({ color: 0x3a4a6a }));
+  table.rotation.x = -Math.PI/2; scene.add(table);
+
+  const ground = new CANNON.Body({ mass:0, material:matTable });
+  ground.addShape(new CANNON.Plane());
+  ground.quaternion.setFromEuler(-Math.PI/2,0,0);
+  world.addBody(ground);
+
+  // ball
+  const r=0.35;
+  ballMesh = new THREE.Mesh(new THREE.SphereGeometry(r,24,16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  scene.add(ballMesh);
+  ballBody = new CANNON.Body({ mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01 });
+  ballBody.addShape(new CANNON.Sphere(r)); world.addBody(ballBody);
+  function reset(){ ballBody.position.set(4.2,2,-7.5); ballBody.velocity.set(0,0,0); ballBody.angularVelocity.set(0,0,0); }
+  reset();
+
+  // simple plunger + reset
+  let pulling=false, power=0;
+  addEventListener('keydown', e=>{ if(e.code==='KeyS') pulling=true; if(e.code==='KeyR') reset(); });
+  addEventListener('keyup', e=>{
+    if(e.code==='KeyS'){
+      pulling=false;
+      ballBody.applyImpulse(new CANNON.Vec3(-Math.sin(tiltRad)*power*0.6, Math.cos(tiltRad)*power*0.6, power), ballBody.position);
+      power=0;
+    }
+  });
+
+  // keep power increasing each frame while held
+  ballBody._plungerState = { pulling:false, power:0 };
+  addEventListener('keydown', e=>{ if(e.code==='KeyS') ballBody._plungerState.pulling=true; });
+  addEventListener('keyup',   e=>{ if(e.code==='KeyS'){ ballBody._plungerState.pulling=false; } });
+
+  // store in world so loop can access
+  world._tick = (dt)=>{
+    const st = ballBody._plungerState;
+    if(st.pulling) st.power = Math.min(st.power + 50*dt, 40);
+    else st.power = Math.max(st.power, 0);
+  };
+}
+
+if (PHASE >= 3) {
+  // walls
+  const wallMatVis = new THREE.MeshBasicMaterial({ color: 0x6c809c });
+  function addWallBox(size,pos){
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x,size.y,size.z), wallMatVis);
+    mesh.position.set(pos.x,pos.y,pos.z); scene.add(mesh);
+    const body = new CANNON.Body({ mass:0, material:matTable });
+    body.addShape(new CANNON.Box(new CANNON.Vec3(size.x/2,size.y/2,size.z/2)));
+    body.position.set(pos.x,pos.y,pos.z); world.addBody(body);
+  }
+  const tableW=12, tableH=20, wallH=2, wallT=0.3;
+  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z: tableH/2 - wallT/2});
+  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2});
+  addWallBox({x:wallT,y:wallH,z:tableH},{x:-tableW/2 + wallT/2,y:wallH/2,z:0});
+  addWallBox({x:wallT,y:wallH,z:tableH},{x: tableW/2 - wallT/2,y:wallH/2,z:0});
+
+  // pegs
+  const pegR=0.25, pegH=0.2;
+  const pegGeom = new THREE.CylinderGeometry(pegR, pegR, pegH, 12);
+  function addPeg(x,z){
+    const m = new THREE.Mesh(pegGeom, new THREE.MeshBasicMaterial({ color: 0xffc107 }));
+    m.position.set(x, pegH/2, z); scene.add(m);
+    const b = new CANNON.Body({ mass:0, material:matPegs });
+    b.addShape(new CANNON.Cylinder(pegR, pegR, pegH, 12)); // Y axis cylinder
+    b.position.set(x, pegH/2, z); world.addBody(b);
+  }
+  for(let row=0; row<5; row++){
+    const z = 4.5 - row*1.8, cols = 5 + (row%2?1:0), span=8;
+    for(let i=0;i<cols;i++){
+      const x = -span/2 + (i+0.5)*(span/cols) + (row%2? (span/(cols*2)) : 0);
+      addPeg(x, z);
+    }
+  }
+}
+
+if (PHASE >= 4) {
+  // flippers
+  const flipLen=2.2, flipRad=0.25;
+  function createFlipper(side=1){
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(flipLen, flipRad*2, flipRad*2),
+      new THREE.MeshBasicMaterial({ color: side>0 ? 0x8bc34a : 0x03a9f4 })
+    );
+    mesh.position.set(side*2.2, 0.6, -8.7); scene.add(mesh);
+
+    const body = new CANNON.Body({ mass:1, material:matTable, angularDamping:0.2 });
+    body.addShape(new CANNON.Box(new CANNON.Vec3(flipLen/2, flipRad, flipRad)));
+    body.position.set(mesh.position.x, mesh.position.y, mesh.position.z); world.addBody(body);
+
+    const pivot = new CANNON.Vec3(
+      body.position.x + (side>0 ? -flipLen/2 + 0.2 : flipLen/2 - 0.2),
+      body.position.y, body.position.z
+    );
+    const hinge = new CANNON.HingeConstraint(body, undefined, {
+      pivotA: body.pointToLocalFrame(pivot), axisA:new CANNON.Vec3(0,1,0),
+      pivotB: pivot, axisB:new CANNON.Vec3(0,1,0), collideConnected:false
+    });
+    world.addConstraint(hinge);
+    const rest = side>0 ? -0.2 : 0.2, up = side>0 ? 0.9 : -0.9;
+    hinge.setLimits(rest, up, 0.5, 0.3); hinge.enableMotor();
+    return { mesh, body, hinge, side };
+  }
+  leftFlip  = createFlipper(-1);
+  rightFlip = createFlipper(+1);
+  function setFlipper(f, on){
+    const speed = on ? (f.side>0 ? +18 : -18) : (f.side>0 ? -12 : +12);
+    f.hinge.setMotorSpeed(speed);
+    f.hinge.motorMaxForce = 120;
+  }
+  addEventListener('keydown', e=>{
+    if(e.code==='ShiftLeft')  setFlipper(leftFlip, true);
+    if(e.code==='ShiftRight') setFlipper(rightFlip, true);
+    if(e.code==='Space' && ballBody){
+      ballBody.applyImpulse(new CANNON.Vec3((Math.random()-0.5)*2, 0, (Math.random()-0.5)*2), ballBody.position);
+    }
+  });
+  addEventListener('keyup', e=>{
+    if(e.code==='ShiftLeft')  setFlipper(leftFlip, false);
+    if(e.code==='ShiftRight') setFlipper(rightFlip, false);
+  });
+}
+
+// --- loop (always draws cube; physics added by phase)
+let frames=0, last=performance.now(); const fixed=1/120;
+function loop(t){
+  const dt=Math.min((t-last)/1000,0.033); last=t;
+
+  frames++; if (frames%30===0) log(`frame ${frames}`);
+  cube.rotation.y = t*0.0015; cube.rotation.x = t*0.001;
+
+  if (PHASE >= 2) {
+    world._tick && world._tick(dt);
+    world.step(fixed, dt, 8);
+    ballMesh.position.copy(ballBody.position);
+    ballMesh.quaternion.copy(ballBody.quaternion);
+  }
+  if (PHASE >= 4) {
+    leftFlip.mesh.position.copy(leftFlip.body.position);
+    leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
+    rightFlip.mesh.position.copy(rightFlip.body.position);
+    rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
