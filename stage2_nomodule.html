@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Stage 2 (no-modules) – walls + pegs</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d10;overflow:hidden}
+  #banner{position:fixed;top:0;left:0;right:0;background:#ffd54f;color:#111;font:700 14px system-ui;padding:6px;text-align:center;z-index:5}
+  #ui{position:fixed;left:12px;bottom:12px;color:#cfd8dc;font:12px system-ui;z-index:4}
+  #err{position:fixed;top:40px;left:0;right:0;background:#300;color:#fff;font:12px/1.4 system-ui;padding:6px;z-index:6;display:none;max-height:35vh;overflow:auto}
+</style>
+</head>
+<body>
+<div id="banner">NO-MODULE BUILD ✅ — Stage 2 (table + ball + walls + pegs)</div>
+<div id="err"></div>
+<div id="ui">S: plunger · R: reset</div>
+
+<!-- Debug console (tap with ?debug to enable) -->
+<script>
+if (location.search.includes('debug')) {
+  var s=document.createElement('script'); s.src="https://cdn.jsdelivr.net/npm/eruda@3";
+  s.onload=function(){ eruda.init(); }; document.body.appendChild(s);
+}
+window.addEventListener('error', e => {
+  var box=document.getElementById('err'); box.style.display='block';
+  box.textContent += 'Error: ' + e.message + '\n';
+});
+</script>
+
+<!-- THREE (global) -->
+<script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
+<!-- CANNON classic UMD (global CANNON) -->
+<script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+
+<script>
+(function(){
+  // --- THREE setup (globals) ---
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x15202b); // lighter for contrast
+
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 200);
+  // Top-down but angled so we definitely see the table
+  camera.position.set(0, 16, 14);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Make canvas obvious
+  renderer.domElement.style.cssText = 'position:fixed;inset:0;border:4px solid lime';
+
+  // Always-visible sanity cube
+  const sanityCube = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshBasicMaterial({ color: 0xff5555 })
+  );
+  sanityCube.position.set(0,1,0);
+  scene.add(sanityCube);
+
+  // Axes helper
+  scene.add(new THREE.AxesHelper(3));
+
+  // --- CANNON setup (globals) ---
+  const world = new CANNON.World();
+  world.gravity.set(0, -9.82, 0);
+  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.allowSleep = true;
+
+  // Tilt gravity to simulate pinball slope
+  const tableTiltDeg = 6;
+  const tiltRad = tableTiltDeg * Math.PI / 180;
+  world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
+
+  // Materials
+  const matBall  = new CANNON.Material('ball');
+  const matTable = new CANNON.Material('table');
+  const matPegs  = new CANNON.Material('pegs');
+  world.addContactMaterial(new CANNON.ContactMaterial(matBall,  matTable, { friction:0.2, restitution:0.2 }));
+  world.addContactMaterial(new CANNON.ContactMaterial(matBall,  matPegs,  { friction:0.0, restitution:0.85 }));
+
+  // --- Table (visual plane + infinite physics plane) ---
+  const tableW=12, tableH=20, wallH=2, wallT=0.3;
+
+  const table = new THREE.Mesh(
+    new THREE.PlaneGeometry(tableW, tableH),
+    new THREE.MeshBasicMaterial({ color: 0x3a4a6a })
+  );
+  table.rotation.x = -Math.PI/2;
+  scene.add(table);
+
+  const ground = new CANNON.Body({ mass:0, material:matTable });
+  ground.addShape(new CANNON.Plane());
+  ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+  world.addBody(ground);
+
+  // --- Walls ---
+  const wallMatVis = new THREE.MeshBasicMaterial({ color: 0x6c809c });
+
+  function addWallBox(size, pos){
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), wallMatVis);
+    mesh.position.set(pos.x, pos.y, pos.z);
+    scene.add(mesh);
+
+    const body = new CANNON.Body({ mass:0, material:matTable });
+    body.addShape(new CANNON.Box(new CANNON.Vec3(size.x/2, size.y/2, size.z/2)));
+    body.position.set(pos.x, pos.y, pos.z);
+    world.addBody(body);
+  }
+
+  // top/bottom
+  addWallBox({x:tableW, y:wallH, z:wallT}, {x:0, y:wallH/2, z: tableH/2 - wallT/2});
+  addWallBox({x:tableW, y:wallH, z:wallT}, {x:0, y:wallH/2, z:-tableH/2 + wallT/2});
+  // sides
+  addWallBox({x:wallT, y:wallH, z:tableH}, {x:-tableW/2 + wallT/2, y:wallH/2, z:0});
+  addWallBox({x:wallT, y:wallH, z:tableH}, {x: tableW/2 - wallT/2, y:wallH/2, z:0});
+
+  // --- Pegs (nails) ---
+  const pegR=0.25, pegH=0.2;
+  const pegGeom = new THREE.CylinderGeometry(pegR, pegR, pegH, 12);
+
+  function addPeg(x,z){
+    // visual
+    const vis = new THREE.Mesh(pegGeom, new THREE.MeshBasicMaterial({ color: 0xffc107 }));
+    vis.position.set(x, pegH/2, z);
+    scene.add(vis);
+
+    // physics (classic cannon cylinder axis is along Y, so no quaternion needed here)
+    const body = new CANNON.Body({ mass:0, material:matPegs });
+    body.addShape(new CANNON.Cylinder(pegR, pegR, pegH, 12));
+    body.position.set(x, pegH/2, z);
+    world.addBody(body);
+  }
+
+  for(let row=0; row<5; row++){
+    const z = 4.5 - row*1.8;
+    const cols = 5 + (row%2?1:0);
+    const span = 8;
+    for(let i=0;i<cols;i++){
+      const x = -span/2 + (i+0.5)*(span/cols) + (row%2? (span/(cols*2)) : 0);
+      addPeg(x, z);
+    }
+  }
+
+  // --- Ball ---
+  const ballR = 0.35;
+  const ballMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(ballR, 24, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  scene.add(ballMesh);
+
+  const ballBody = new CANNON.Body({
+    mass: 0.16, material: matBall, linearDamping: 0.01, angularDamping: 0.01
+  });
+  ballBody.addShape(new CANNON.Sphere(ballR));
+  world.addBody(ballBody);
+
+  function resetBall(){
+    ballBody.position.set(4.2, 2.0, -7.5);
+    ballBody.velocity.set(0,0,0);
+    ballBody.angularVelocity.set(0,0,0);
+  }
+  resetBall();
+
+  // --- Input ---
+  let pulling=false, plungerPower=0;
+  addEventListener('keydown', function(e){
+    if(e.code==='KeyS') pulling=true;
+    if(e.code==='KeyR') resetBall();
+  });
+  addEventListener('keyup', function(e){
+    if(e.code==='KeyS'){
+      pulling=false;
+      ballBody.applyImpulse(
+        new CANNON.Vec3(-Math.sin(tiltRad)*plungerPower*0.6, Math.cos(tiltRad)*plungerPower*0.6, plungerPower),
+        ballBody.position
+      );
+      plungerPower=0;
+    }
+  });
+
+  // --- Loop ---
+  var last = performance.now();
+  var fixed = 1/120;
+  function loop(t){
+    var dt = Math.min((t-last)/1000, 0.033); last = t;
+
+    // spin sanity cube so we always see frames
+    sanityCube.rotation.y = t*0.0015;
+    sanityCube.rotation.x = t*0.0010;
+
+    if(pulling) plungerPower = Math.min(plungerPower + 50*dt, 40);
+    world.step(fixed, dt, 8);
+
+    // sync ball
+    ballMesh.position.copy(ballBody.position);
+    ballMesh.quaternion.copy(ballBody.quaternion);
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // Resize
+  addEventListener('resize', function(){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+})();
+</script>
+</body>
+</html>
