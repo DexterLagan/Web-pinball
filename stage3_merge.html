@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b19";
+const BUILD = "b20";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -81,6 +81,8 @@ scene.add(new THREE.GridHelper(10,10,0x444444,0x444444));
 let world, tiltRad, matBall, matTable, matPegs, ballMesh, ballBody, leftFlip, rightFlip;
 
 if (PHASE >= 2) {
+
+    // Create WORLD
   world = new CANNON.World();
   
   // ---- SLOPE (single truth) ----
@@ -92,6 +94,24 @@ const gy = -Math.cos(tiltRad) * G;
 const gz = -Math.sin(tiltRad) * G;     // keep the sign that rolled down for you
 world.gravity.set(0, gy, gz);
 log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
+
+// ---- TABLE VISUAL ----
+const tableW = 12, tableH = 20;
+const table = new THREE.Mesh(
+  new THREE.PlaneGeometry(tableW, tableH),
+  new THREE.MeshBasicMaterial({ color: 0x3a4a6a })
+);
+table.rotation.x = -Math.PI/2;          // lay flat
+scene.add(table);
+
+// Optional: hide magenta debug now that table is back
+renderer.setClearColor(0x101820, 1);    // dark slate bg
+
+// ---- INFINITE FLOOR (PHYSICS) ----
+const ground = new CANNON.Body({ mass: 0, material: matTable });
+ground.addShape(new CANNON.Plane());
+ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);  // y-up plane
+world.addBody(ground);
 
 // Low rolling resistance; pegs stay bouncy
 world.defaultContactMaterial.friction    = 0.015;
@@ -217,10 +237,12 @@ if (PHASE >= 4) {
     body.type = CANNON.Body.KINEMATIC;                      // ← kinematic (no solver jitter)
     world.addBody(body);
 
-    // angles in radians (rest points inward, up is +~35°)
-    const rest = (side < 0 ?  -0.22 :  +0.22);
-    const up   = (side < 0 ?  rest + 0.61 : rest - 0.61);   // ~35°
-    let target = rest; let angle = rest; const speed = 12;  // rad/s animation speed
+
+    // angles in radians (rest points inward/down, UP adds ~35° toward the center)
+    const rest = (side < 0 ?  -0.35 :  +0.35);  // a bit more “down” by default
+    const up   = (side < 0 ?  rest - 0.61 : rest + 0.61); // ← swapped direction
+    let target = rest, angle = rest;
+    const speed = 14; // snappier (rad/s). Try 12–18
 
     function setTarget(isUp){ target = isUp ? up : rest; }
 
