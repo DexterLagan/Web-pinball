@@ -270,7 +270,8 @@ let frames=0, last=performance.now(); const fixed=1/120;
 function loop(t){
   const dt=Math.min((t-last)/1000,0.033); last=t;
 
-  frames++; if (frames%30===0) log(`frame ${frames}`);
+  frames++; 
+  // if (frames%30===0) log(`frame ${frames}`);
   cube.rotation.y = t*0.0015; cube.rotation.x = t*0.001;
 
   if (PHASE >= 2) {
