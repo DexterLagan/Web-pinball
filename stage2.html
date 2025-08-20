@@ -127,5 +127,13 @@ requestAnimationFrame(loop);
 
 addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
 </script>
+<script>
+  if (location.search.includes('debug')) {
+    const s = document.createElement('script');
+    s.src = "https://cdn.jsdelivr.net/npm/eruda";
+    s.onload = () => { eruda.init(); };
+    document.body.appendChild(s);
+  }
+</script>
 </body>
 </html>
