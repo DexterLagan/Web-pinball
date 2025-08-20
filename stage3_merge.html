@@ -16,7 +16,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b10";
+const BUILD = "b11";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -164,39 +164,70 @@ if (PHASE >= 3) {
 }
 
 if (PHASE >= 4) {
-  // flippers
+  // Flippers with explicit fixed anchors (no undefined bodyB)
   const flipLen=2.2, flipRad=0.25;
+
   function createFlipper(side=1){
+    // Visual
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(flipLen, flipRad*2, flipRad*2),
       new THREE.MeshBasicMaterial({ color: side>0 ? 0x8bc34a : 0x03a9f4 })
     );
-    mesh.position.set(side*2.2, 0.6, -8.7); scene.add(mesh);
+    mesh.position.set(side*2.2, 0.6, -8.7);
+    scene.add(mesh);
 
+    // Dynamic body
     const body = new CANNON.Body({ mass:1, material:matTable, angularDamping:0.2 });
     body.addShape(new CANNON.Box(new CANNON.Vec3(flipLen/2, flipRad, flipRad)));
-    body.position.set(mesh.position.x, mesh.position.y, mesh.position.z); world.addBody(body);
+    body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+    world.addBody(body);
 
-    const pivot = new CANNON.Vec3(
+    // Fixed anchor body at the pivot point
+    const pivotWorld = new CANNON.Vec3(
       body.position.x + (side>0 ? -flipLen/2 + 0.2 : flipLen/2 - 0.2),
-      body.position.y, body.position.z
+      body.position.y,
+      body.position.z
     );
-    const hinge = new CANNON.HingeConstraint(body, undefined, {
-      pivotA: body.pointToLocalFrame(pivot), axisA:new CANNON.Vec3(0,1,0),
-      pivotB: pivot, axisB:new CANNON.Vec3(0,1,0), collideConnected:false
+    const anchor = new CANNON.Body({ mass:0 });
+    anchor.addShape(new CANNON.Sphere(0.01)); // tiny shape so it’s valid
+    anchor.position.copy(pivotWorld);
+    world.addBody(anchor);
+
+    // Hinge between flipper body and anchor
+    const hinge = new CANNON.HingeConstraint(body, anchor, {
+      pivotA: body.pointToLocalFrame(pivotWorld),
+      axisA:  new CANNON.Vec3(0,1,0),
+      pivotB: new CANNON.Vec3(0,0,0),
+      axisB:  new CANNON.Vec3(0,1,0),
+      collideConnected:false
     });
     world.addConstraint(hinge);
-    const rest = side>0 ? -0.2 : 0.2, up = side>0 ? 0.9 : -0.9;
-    hinge.setLimits(rest, up, 0.5, 0.3); hinge.enableMotor();
-    return { mesh, body, hinge, side };
+
+    // Limits & motor
+    const rest = side>0 ? -0.2 : 0.2;
+    const up   = side>0 ?  0.9 : -0.9;
+    hinge.setLimits(rest, up, 0.5, 0.3);
+    hinge.enableMotor();
+
+    return { mesh, body, hinge, anchor, side };
   }
-  leftFlip  = createFlipper(-1);
-  rightFlip = createFlipper(+1);
+
+  try {
+    leftFlip  = createFlipper(-1);
+    rightFlip = createFlipper(+1);
+    log('Flippers: OK');
+  } catch (e) {
+    log('❌ Flipper init failed: ' + e.message);
+  }
+
   function setFlipper(f, on){
+    if(!f) return;
     const speed = on ? (f.side>0 ? +18 : -18) : (f.side>0 ? -12 : +12);
     f.hinge.setMotorSpeed(speed);
     f.hinge.motorMaxForce = 120;
   }
+
+  // Controls
   addEventListener('keydown', e=>{
     if(e.code==='ShiftLeft')  setFlipper(leftFlip, true);
     if(e.code==='ShiftRight') setFlipper(rightFlip, true);
@@ -224,12 +255,12 @@ function loop(t){
     ballMesh.position.copy(ballBody.position);
     ballMesh.quaternion.copy(ballBody.quaternion);
   }
-  if (PHASE >= 4) {
-    leftFlip.mesh.position.copy(leftFlip.body.position);
-    leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
-    rightFlip.mesh.position.copy(rightFlip.body.position);
-    rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
-  }
+  if (PHASE >= 4 && leftFlip && rightFlip) {
+  leftFlip.mesh.position.copy(leftFlip.body.position);
+  leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
+  rightFlip.mesh.position.copy(rightFlip.body.position);
+  rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
+}
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
