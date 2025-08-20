@@ -238,11 +238,13 @@ if (PHASE >= 4) {
     world.addBody(body);
 
 
-    // angles in radians (rest points inward/down, UP adds ~35° toward the center)
-    const rest = (side < 0 ?  -0.35 :  +0.35);  // a bit more “down” by default
-    const up   = (side < 0 ?  rest - 0.61 : rest + 0.61); // ← swapped direction
-    let target = rest, angle = rest;
-    const speed = 14; // snappier (rad/s). Try 12–18
+    // angles in radians, pivot at OUTER tip
+// LEFT (side=-1): rest = "down", RIGHT (side=+1): rest = "up"
+// Pressed = rotate ~35° the other way.
+const rest = (side < 0 ?  +0.35 :  -0.35);            // left down, right up
+const up   = (side < 0 ?  rest - 0.61 :  rest + 0.61); // about 35°
+let target = rest, angle = rest;
+const speed = 14;  // snappy flip
 
     function setTarget(isUp){ target = isUp ? up : rest; }
 
@@ -256,17 +258,21 @@ if (PHASE >= 4) {
 
   // input
   addEventListener('keydown', e=>{
-    if(e.code==='ShiftLeft')  leftFlip.setTarget(true);
-    if(e.code==='ShiftRight') rightFlip.setTarget(true);
-    if(e.code==='Space') {
-      ballBody.wakeUp && ballBody.wakeUp();
-      ballBody.applyImpulse(new CANNON.Vec3((Math.random()-0.5)*1.0,0,(Math.random()-0.5)*1.0), ballBody.position);
-    }
-  });
-  addEventListener('keyup', e=>{
-    if(e.code==='ShiftLeft')  leftFlip.setTarget(false);
-    if(e.code==='ShiftRight') rightFlip.setTarget(false);
-  });
+  if (e.code === 'ShiftLeft')  leftFlip.setTarget(true);
+  if (e.code === 'ShiftRight') rightFlip.setTarget(true);
+  if (e.code === 'Space') {
+    ballBody.wakeUp && ballBody.wakeUp();
+    ballBody.applyImpulse(
+      new CANNON.Vec3((Math.random()-0.5)*1.0, 0, (Math.random()-0.5)*1.0),
+      ballBody.position
+    );
+  }
+});
+
+addEventListener('keyup', e=>{
+  if (e.code === 'ShiftLeft')  leftFlip.setTarget(false);
+  if (e.code === 'ShiftRight') rightFlip.setTarget(false);
+});
 
   // ---- in LOOP: animate angles + sync KINEMATIC bodies ----
   // put this inside your main loop, replacing the old PD drive:
