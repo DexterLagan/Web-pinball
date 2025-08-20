@@ -249,18 +249,12 @@ if (PHASE >= 4) {
       rest: (side>0 ? -0.22 : 0.22),
       up:   (side>0 ?  0.85 : -0.85),
       target: (side>0 ? -0.22 : 0.22),
-      kp: 10,   // softer stiffness
-      kd: 12,   // more damping
-      maxSpeed: 6,  // rad/s
-      dead: 0.03,   // rad dead-band
+      kp: 6,   // softer stiffness
+      kd: 18,   // more damping
+      maxSpeed: 4.5,  // rad/s
+      dead: 0.06,   // rad dead-band
       deadVel: 0.3  // rad/s dead-band
     };
-
-const MAX_FORCE = 70;   // was 80–100
-ctrl.kp = 6;            // was 8–10
-ctrl.kd = 18;           // was 12–16
-ctrl.maxSpeed = 4.5;    // was 5–6
-ctrl.dead = 0.06;       // a hair wider dead-band
 
     return { mesh, body, hinge, anchor, ctrl, side };
   }
