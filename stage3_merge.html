@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b15";
+const BUILD = "b16";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -96,9 +96,6 @@ world.defaultContactMaterial.restitution = 0.15;
 
   world.broadphase = new CANNON.SAPBroadphase(world);
   world.allowSleep = true;
-
-  tiltRad = 6*Math.PI/180;
-  world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
 
   matBall  = new CANNON.Material('ball');
   matTable = new CANNON.Material('table');
