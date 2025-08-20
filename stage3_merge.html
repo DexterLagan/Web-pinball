@@ -238,7 +238,7 @@ if (PHASE >= 4) {
     hinge.enableMotor();
 
     // Clamp motor force (key for cannon.js)
-    const MAX_FORCE = 100;  // try 80–140
+    const MAX_FORCE = 70;  // try 80–140
     if (hinge.motorEquation) {
       hinge.motorEquation.maxForce =  MAX_FORCE;
       hinge.motorEquation.minForce = -MAX_FORCE;
@@ -255,6 +255,12 @@ if (PHASE >= 4) {
       dead: 0.03,   // rad dead-band
       deadVel: 0.3  // rad/s dead-band
     };
+
+const MAX_FORCE = 70;   // was 80–100
+ctrl.kp = 6;            // was 8–10
+ctrl.kd = 18;           // was 12–16
+ctrl.maxSpeed = 4.5;    // was 5–6
+ctrl.dead = 0.06;       // a hair wider dead-band
 
     return { mesh, body, hinge, anchor, ctrl, side };
   }
