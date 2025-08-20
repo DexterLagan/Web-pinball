@@ -27,9 +27,9 @@ addEventListener('unhandledrejection',e=>showErr('Promise: '+(e.reason?.message|
 console.log('Booting stage2 diagnostics');
 
 /*** IMPORTS ***/
-import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=s2diag";
-import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js?v=s2diag";
-import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=s2diag";
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
+import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
+import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js";
 
 /*** THREE SETUP ***/
 const scene=new THREE.Scene();
