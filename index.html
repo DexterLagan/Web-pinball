@@ -3,199 +3,106 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Web Pinball Prototype</title>
-<style>
-  html, body { margin:0; height:100%; background:#0b0d10; overflow:hidden; }
-  #overlay { position:fixed; left:12px; bottom:12px; color:#cfd8dc; font:12px/1.4 system-ui, sans-serif; opacity:.9; z-index:2 }
-  .touch { position:fixed; bottom:0; width:50%; height:33%; opacity:0; } #leftTouch{left:0} #rightTouch{right:0}
-</style>
+<title>Pinball Stage 1</title>
+<style>html,body{margin:0;height:100%;background:#0b0d10;overflow:hidden}#ui{position:fixed;left:12px;bottom:12px;color:#cfd8dc;font:12px system-ui}</style>
 </head>
 <body>
-  <div id="overlay">⇧ Left / ⇧ Right flippers · S plunger · Space nudge · R reset · Collisions: <span id="score">0</span></div>
-  <div id="leftTouch" class="touch"></div><div id="rightTouch" class="touch"></div>
-
+<div id="ui">S: pull plunger, release to launch · R: reset</div>
 <script type="module">
-import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=2";
-import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js?v=2";
-import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=2";
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=4";
+import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=4";
 
-// Scene, camera, renderer
+// --- three ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0d10);
-
 const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
 camera.position.set(0, 10, 20);
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias:true });
+camera.lookAt(0,0,0);
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
-// Disable shadows on mobile for now
-renderer.shadowMap.enabled = false;
 document.body.appendChild(renderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enabled = true; controls.target.set(0,0,0); controls.update();
-
-// Always-visible helpers
+// helpers (leave visible for sanity)
 scene.add(new THREE.AxesHelper(3));
-const testCube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({ color: 0xff5555 }));
-testCube.position.set(0,1,0);
-scene.add(testCube);
 
-// Lights (not needed for MeshBasic, but used by other materials)
-scene.add(new THREE.HemisphereLight(0xffffff, 0x101010, 0.9));
-const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5,10,7); scene.add(dir);
-
-// Physics
+// --- cannon ---
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = true;
 
-// Tilt
+// tilt the “world gravity” like a pinball table
 const tiltRad = THREE.MathUtils.degToRad(6);
 world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
 
-// Materials
-const matBall = new CANNON.Material('ball');
+// contact materials
+const matBall  = new CANNON.Material('ball');
 const matTable = new CANNON.Material('table');
-const matPegs = new CANNON.Material('pegs');
 world.addContactMaterial(new CANNON.ContactMaterial(matBall, matTable, { friction:0.2, restitution:0.2 }));
-world.addContactMaterial(new CANNON.ContactMaterial(matBall, matPegs,  { friction:0.0, restitution:0.85 }));
 
-// Sync list
-const bodies = [];
-function bind(mesh, body){ scene.add(mesh); world.addBody(body); bodies.push({mesh, body}); }
+// table (visual plane + infinite physics plane)
+const tableW=12, tableH=20;
+const table = new THREE.Mesh(new THREE.PlaneGeometry(tableW, tableH), new THREE.MeshBasicMaterial({color:0x3a4a6a}));
+table.rotation.x = -Math.PI/2;
+scene.add(table);
 
-// Table
-const tableW=12, tableH=20, wallH=2, wallT=0.3;
-const table = new THREE.Mesh(new THREE.PlaneGeometry(tableW, tableH), new THREE.MeshBasicMaterial({ color: 0x3a4a6a })); // Basic = bright
-table.rotation.x = -Math.PI/2; scene.add(table);
+const ground = new CANNON.Body({ mass:0, material:matTable, shape:new CANNON.Plane() });
+ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+world.addBody(ground);
 
-// Physics plane
-const ground = new CANNON.Body({ mass:0, material: matTable, shape: new CANNON.Plane() });
-ground.quaternion.setFromEuler(-Math.PI/2,0,0); world.addBody(ground);
-
-// Walls
-const wallMat3 = new THREE.MeshBasicMaterial({ color: 0x6c809c });
-(function walls(){
-  const zTop =  tableH/2 - wallT/2, zBot = -tableH/2 + wallT/2;
-  const top = new THREE.Mesh(new THREE.BoxGeometry(tableW, wallH, wallT), wallMat3); top.position.set(0, wallH/2, zTop);
-  const bot = new THREE.Mesh(new THREE.BoxGeometry(tableW, wallH, wallT), wallMat3); bot.position.set(0, wallH/2, zBot);
-  scene.add(top,bot);
-  const bTop = new CANNON.Body({ mass:0, material: matTable }); bTop.addShape(new CANNON.Box(new CANNON.Vec3(tableW/2, wallH/2, wallT/2))); bTop.position.set(0, wallH/2, zTop); world.addBody(bTop);
-  const bBot = new CANNON.Body({ mass:0, material: matTable }); bBot.addShape(new CANNON.Box(new CANNON.Vec3(tableW/2, wallH/2, wallT/2))); bBot.position.set(0, wallH/2, zBot); world.addBody(bBot);
-
-  const len=tableH, h=wallH, t=wallT;
-  const l = new THREE.Mesh(new THREE.BoxGeometry(t,h,len), wallMat3); l.position.set(-tableW/2 + t/2, h/2, 0);
-  const r = new THREE.Mesh(new THREE.BoxGeometry(t,h,len), wallMat3); r.position.set( tableW/2 - t/2, h/2, 0);
-  scene.add(l,r);
-  const bL = new CANNON.Body({ mass:0, material: matTable }); bL.addShape(new CANNON.Box(new CANNON.Vec3(t/2,h/2,len/2))); bL.position.set(l.position.x, l.position.y, l.position.z); world.addBody(bL);
-  const bR = new CANNON.Body({ mass:0, material: matTable }); bR.addShape(new CANNON.Box(new CANNON.Vec3(t/2,h/2,len/2))); bR.position.set(r.position.x, r.position.y, r.position.z); world.addBody(bR);
-})();
-
-// Pegs
-const pegR=0.25, pegH=0.2;
-const pegGeom = new THREE.CylinderGeometry(pegR, pegR, pegH, 12);
-function addPeg(x,z){
-  const m = new THREE.Mesh(pegGeom, new THREE.MeshBasicMaterial({ color: 0xffc107 }));
-  m.position.set(x, pegH/2, z); scene.add(m);
-  // Rotate cannon cylinder axis to Y
-  const body = new CANNON.Body({ mass:0, material: matPegs });
-  const shape = new CANNON.Cylinder(pegR, pegR, pegH, 12);
-  const quat = new CANNON.Quaternion(); quat.setFromEuler(Math.PI/2,0,0);
-  body.addShape(shape, new CANNON.Vec3(0,0,0), quat);
-  body.position.set(x, pegH/2, z);
-  world.addBody(body);
-}
-for(let row=0; row<5; row++){
-  const z = 4.5 - row*1.8, cols = 5 + (row%2?1:0), span=8;
-  for(let i=0;i<cols;i++){
-    const x = -span/2 + (i+0.5)*(span/cols) + (row%2? (span/(cols*2)) : 0);
-    addPeg(x,z);
-  }
-}
-
-// Ball
-const ballR=0.35;
-const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(ballR, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-const ballBody = new CANNON.Body({ mass:0.16, material: matBall, linearDamping:0.01, angularDamping:0.01 });
+// ball
+const ballR = 0.35;
+const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(ballR, 24, 16), new THREE.MeshBasicMaterial({color:0xffffff}));
+scene.add(ballMesh);
+const ballBody = new CANNON.Body({ mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01 });
 ballBody.addShape(new CANNON.Sphere(ballR));
-bind(ballMesh, ballBody);
-function resetBall(){ ballBody.position.set(4.2, 2.0, -7.5); ballBody.velocity.set(0,0,0); ballBody.angularVelocity.set(0,0,0); }
+world.addBody(ballBody);
+
+function resetBall(){
+  ballBody.position.set(4.2, 2.0, -7.5);
+  ballBody.velocity.set(0,0,0);
+  ballBody.angularVelocity.set(0,0,0);
+}
 resetBall();
 
-// Launcher lane
-(function(){
-  const m1 = new THREE.Mesh(new THREE.BoxGeometry(0.3,1,6), new THREE.MeshBasicMaterial({ color: 0x9bb0c8 })); m1.position.set(3.8,0.5,-5);
-  const m2 = new THREE.Mesh(new THREE.BoxGeometry(0.3,1,6), new THREE.MeshBasicMaterial({ color: 0x9bb0c8 })); m2.position.set(4.6,0.5,-5);
-  scene.add(m1,m2);
-  const b1 = new CANNON.Body({ mass:0, material: matTable }); b1.addShape(new CANNON.Box(new CANNON.Vec3(0.15,0.5,3))); b1.position.set(3.8,0.5,-5); world.addBody(b1);
-  const b2 = new CANNON.Body({ mass:0, material: matTable }); b2.addShape(new CANNON.Box(new CANNON.Vec3(0.15,0.5,3))); b2.position.set(4.6,0.5,-5); world.addBody(b2);
-})();
-
-// Flippers
-const flipLen=2.2, flipRad=0.25;
-function createFlipper(side=1){
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(flipLen, flipRad*2, flipRad*2), new THREE.MeshBasicMaterial({ color: side>0?0x8bc34a:0x03a9f4 }));
-  mesh.position.set(side*2.2, 0.6, -8.7);
-  const body = new CANNON.Body({ mass:1, material: matTable, angularDamping:0.2 });
-  body.addShape(new CANNON.Box(new CANNON.Vec3(flipLen/2, flipRad, flipRad)));
-  body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
-  const pivot = new CANNON.Vec3(body.position.x + (side>0 ? -flipLen/2+0.2 : flipLen/2-0.2), body.position.y, body.position.z);
-  const hinge = new CANNON.HingeConstraint(body, undefined, {
-    pivotA: body.pointToLocalFrame(pivot), axisA: new CANNON.Vec3(0,1,0),
-    pivotB: pivot, axisB: new CANNON.Vec3(0,1,0), collideConnected:false
-  });
-  world.addConstraint(hinge);
-  const rest = side>0 ? -0.2 : 0.2, up = side>0 ? 0.9 : -0.9;
-  hinge.setLimits(rest, up, 0.5, 0.3); hinge.enableMotor();
-  return { mesh, body, hinge, side };
-}
-const leftFlip = createFlipper(-1), rightFlip = createFlipper(+1);
-scene.add(leftFlip.mesh, rightFlip.mesh); world.addBody(leftFlip.body); world.addBody(rightFlip.body);
-function setFlipper(f, active){ const speed = active ? (f.side>0?+18:-18) : (f.side>0?-12:+12); f.hinge.setMotorSpeed(speed); f.hinge.motorMaxForce = 120; }
-
-// Score
-const scoreEl = document.getElementById('score'); let score=0;
-ballBody.addEventListener('collide', (e)=>{ if(e.body.material && e.body.material.name==='pegs'){ score+=10; scoreEl.textContent=String(score);} });
-
-// Input
-let plungerPower=0, pulling=false;
+// simple launcher (just an impulse when releasing S)
+let pulling=false, plungerPower=0;
 addEventListener('keydown', e=>{
-  if(e.code==='ShiftLeft') setFlipper(leftFlip,true);
-  if(e.code==='ShiftRight') setFlipper(rightFlip,true);
   if(e.code==='KeyS') pulling=true;
-  if(e.code==='KeyR'){ score=0; scoreEl.textContent='0'; resetBall(); }
-  if(e.code==='Space'){ ballBody.applyImpulse(new CANNON.Vec3((Math.random()-0.5)*2, 0, (Math.random()-0.5)*2), ballBody.position); }
+  if(e.code==='KeyR') resetBall();
 });
 addEventListener('keyup', e=>{
-  if(e.code==='ShiftLeft') setFlipper(leftFlip,false);
-  if(e.code==='ShiftRight') setFlipper(rightFlip,false);
-  if(e.code==='KeyS'){ pulling=false; ballBody.applyImpulse(new CANNON.Vec3(-Math.sin(tiltRad)*plungerPower*0.6, Math.cos(tiltRad)*plungerPower*0.6, plungerPower), ballBody.position); plungerPower=0; }
+  if(e.code==='KeyS'){
+    pulling=false;
+    ballBody.applyImpulse(
+      new CANNON.Vec3(-Math.sin(tiltRad)*plungerPower*0.6, Math.cos(tiltRad)*plungerPower*0.6, plungerPower),
+      ballBody.position
+    );
+    plungerPower=0;
+  }
 });
 
-// Touch
-function onTouch(e,down){ const x=(e.touches&&e.touches[0])?e.touches[0].clientX:e.clientX; if(x<innerWidth*0.5) setFlipper(leftFlip,down); else setFlipper(rightFlip,down); }
-document.getElementById('leftTouch').addEventListener('pointerdown', e=>onTouch(e,true));
-document.getElementById('leftTouch').addEventListener('pointerup',   e=>onTouch(e,false));
-document.getElementById('rightTouch').addEventListener('pointerdown', e=>onTouch(e,true));
-document.getElementById('rightTouch').addEventListener('pointerup',   e=>onTouch(e,false));
-
-// Loop
+// loop
 let last=performance.now(); const fixed=1/120;
 function loop(t){
   const dt=Math.min((t-last)/1000, 0.033); last=t;
   if(pulling) plungerPower=Math.min(plungerPower+50*dt, 40);
   world.step(fixed, dt, 8);
-  for(const {mesh,body} of bodies){ mesh.position.copy(body.position); mesh.quaternion.copy(body.quaternion); }
-  leftFlip.mesh.position.copy(leftFlip.body.position); leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
-  rightFlip.mesh.position.copy(rightFlip.body.position); rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
-  renderer.render(scene, camera); requestAnimationFrame(loop);
+
+  // sync mesh
+  ballMesh.position.copy(ballBody.position);
+  ballMesh.quaternion.copy(ballBody.quaternion);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-// Resize
-addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+// resize
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
 </script>
 </body>
 </html>
