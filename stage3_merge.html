@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b20";
+const BUILD = "b24";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -258,8 +258,8 @@ const speed = 14;  // snappy flip
 
   // input
   addEventListener('keydown', e=>{
-  if (e.code === 'ShiftLeft')  leftFlip.setTarget(true);
-  if (e.code === 'ShiftRight') rightFlip.setTarget(true);
+  if (e.code === 'ShiftLeft')  rightFlip.setTarget(true);
+  if (e.code === 'ShiftRight') leftFlip.setTarget(true);
   if (e.code === 'Space') {
     ballBody.wakeUp && ballBody.wakeUp();
     ballBody.applyImpulse(
