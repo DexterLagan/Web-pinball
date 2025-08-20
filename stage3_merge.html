@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b26";
+const BUILD = "b27";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -96,12 +96,13 @@ world.gravity.set(0, gy, gz);
 log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 
 // ---- TABLE VISUAL ----
-const tableW = 12, tableH = 20;
+const tableW = 12, tableH = 20;   // keep as-is if you already have them
 
-// Launcher lane spawn (bottom-right)
-const LAUNCH_X =  tableW/2 - 1.8;  // ≈ +4.2 (near right wall)
-const LAUNCH_Z = -tableH/2 + 2.5;  // ≈ -7.5 (near bottom)
-const LAUNCH_Y =  0.8;             // a bit above the plane
+// --- Plunger lane spawn (bottom-right) ---
+const ballRadius = 0.35;          // your current ball radius
+const LAUNCH_X =  tableW/2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
+const LAUNCH_Z = -tableH/2 + 2.5; // ≈ -7.5 (near the bottom)
+const LAUNCH_Y =  0.8;            // slightly above the playfield
 
 const table = new THREE.Mesh(
   new THREE.PlaneGeometry(tableW, tableH),
@@ -157,14 +158,14 @@ function placeBallAtLauncher(){
   ballBody.wakeUp && ballBody.wakeUp();
 }
 
-// Fire up-table (toward +Z). Give it a small upward component so it clears bumps.
-function launchBall(power = 16){
+// Up-table = toward +Z for your current camera/gravity setup
+function launchBall(power = 18){
   placeBallAtLauncher();
-  // Up-table is +Z; add a tiny Y component so it doesn't scrape
-  const iz = power;                       // forward
-  const iy = Math.max(0.5, power * 0.10); // slight lift
+  const iz = power;                       // push forward (+Z)
+  const iy = Math.max(0.6, power * 0.10);// tiny lift so it doesn’t scrape
   ballBody.applyImpulse(new CANNON.Vec3(0, iy, iz), ballBody.position);
 }
+
 
 function reset(){ 
   ballBody.position.set(4.2, 2.0, -7.5);
@@ -185,7 +186,8 @@ reset();
   //   }
   // });
 
-  let lastLaunch = 0;
+  // SPACE → plunger launch (cooldown to avoid repeats)
+let lastLaunch = 0;
 
 addEventListener('keydown', e=>{
   if (e.code === 'ShiftLeft')  leftFlip.setTarget(true);
@@ -194,7 +196,7 @@ addEventListener('keydown', e=>{
   if (e.code === 'Space') {
     const now = performance.now();
     if (now - lastLaunch > 300) {   // simple cooldown to avoid spam
-      launchBall(18);               // tweak 14–22 to taste
+      launchBall(20);               // tweak 14–22 to taste
       lastLaunch = now;
     }
   }
