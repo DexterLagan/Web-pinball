@@ -102,8 +102,10 @@ function sizeNow(src){
   c.setAttribute('height', String(vh));
 
   // 3) WebGL drawing buffer size
-  renderer.setPixelRatio(dpr);
-  renderer.setSize(vw, vh, false);
+renderer.setPixelRatio(1);
+renderer.setSize(vw, vh, true);   // in your sizeNow(...)
+c.style.width  = vw + 'px';
+c.style.height = vh + 'px';
 
   // Camera
   camera.aspect = vw / Math.max(1, vh);
