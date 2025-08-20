@@ -55,11 +55,39 @@ const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200)
 camera.position.set(0, 16, 14);
 camera.lookAt(0,0,0);
 
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setSize(innerWidth, innerHeight);
+// --- renderer ---
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
 document.body.appendChild(renderer.domElement);
-// make the canvas obvious while we debug
-renderer.domElement.style.cssText='position:fixed;inset:0;border:4px solid lime';
+
+// Make the canvas obvious and sized explicitly
+renderer.domElement.style.position = 'fixed';
+renderer.domElement.style.left = '0';
+renderer.domElement.style.top = '0';
+renderer.domElement.style.border = '4px solid lime';
+renderer.domElement.style.zIndex = '1';
+
+// Set DPR and size using visualViewport (iPad-safe), with logs
+function sizeNow(src){
+  const vw = (window.visualViewport ? window.visualViewport.width  : window.innerWidth)  || 1;
+  const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) || 1;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  // CSS pixels (so the lime border looks correct)
+  renderer.domElement.style.width  = vw + 'px';
+  renderer.domElement.style.height = vh + 'px';
+  // Actual drawing buffer
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(vw, vh, false);
+  camera.aspect = vw / vh;
+  camera.updateProjectionMatrix();
+  log(`↔️ resize from ${src}: vw=${vw}, vh=${vh}, dpr=${dpr}`);
+}
+// call once now, then on any viewport change
+sizeNow('boot');
+addEventListener('resize', ()=>sizeNow('window.resize'));
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', ()=>sizeNow('visualViewport.resize'));
+  visualViewport.addEventListener('scroll', ()=>sizeNow('visualViewport.scroll'));
+}
 
 // Always-visible sanity cube (proves frames are rendering)
 const sanityCube = new THREE.Mesh(
