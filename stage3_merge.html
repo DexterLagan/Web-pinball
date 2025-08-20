@@ -82,19 +82,19 @@ let world, tiltRad, matBall, matTable, matPegs, ballMesh, ballBody, leftFlip, ri
 
 if (PHASE >= 2) {
   world = new CANNON.World();
-  // ---- PINBALL SLOPE (single source of truth) ----
-tiltRad = 14 * Math.PI / 180;     // a bit steeper
+  
+  // ---- SLOPE (single truth) ----
+tiltRad = 18 * Math.PI / 180;          // steeper
 const G = 9.82;
-
-// View: camera at (0,16,-14) looking at (0,0,0).
-// Down-table should be toward **+Z** (toward the camera).
+// Your current camera is at (0,16,-14) looking at (0,0,0).
+// "Down-table" (toward player) has been working with NEGATIVE Z:
 const gy = -Math.cos(tiltRad) * G;
-const gz = -Math.sin(tiltRad) * G;   // ⬅️ flipped to NEGATIVE to counter the “rolling up” you saw
+const gz = -Math.sin(tiltRad) * G;     // keep the sign that rolled down for you
 world.gravity.set(0, gy, gz);
 log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 
-// Low rolling resistance on the table, bouncy pegs
-world.defaultContactMaterial.friction    = 0.02;
+// Low rolling resistance; pegs stay bouncy
+world.defaultContactMaterial.friction    = 0.015;
 world.defaultContactMaterial.restitution = 0.12;
 
 matBall  = new CANNON.Material('ball');
@@ -102,45 +102,34 @@ matTable = new CANNON.Material('table');
 matPegs  = new CANNON.Material('pegs');
 
 world.addContactMaterial(new CANNON.ContactMaterial(
-  matBall,  matTable, { friction:0.02, restitution:0.12 }
+  matBall,  matTable, { friction:0.015, restitution:0.12 }
 ));
 world.addContactMaterial(new CANNON.ContactMaterial(
-  matBall,  matPegs,  { friction:0.00, restitution:0.85 }
+  matBall,  matPegs,  { friction:0.00,  restitution:0.85 }
 ));
 
-// --- End of Pinball Slope ----
+// ---- BALL (heavier, never sleeps) ----
+const r = 0.35;
+ballMesh = new THREE.Mesh(new THREE.SphereGeometry(r,24,16),
+                          new THREE.MeshBasicMaterial({ color: 0xffffff }));
+scene.add(ballMesh);
 
-  world.broadphase = new CANNON.SAPBroadphase(world);
-  world.allowSleep = true;
-
-  matBall  = new CANNON.Material('ball');
-  matTable = new CANNON.Material('table');
-  matPegs  = new CANNON.Material('pegs');
-  world.addContactMaterial(new CANNON.ContactMaterial(matBall,  matTable, { friction:0.2, restitution:0.2 }));
-  world.addContactMaterial(new CANNON.ContactMaterial(matBall,  matPegs,  { friction:0.0, restitution:0.85 }));
-
-  // table plane (visual + infinite ground)
-  const table = new THREE.Mesh(new THREE.PlaneGeometry(12,20), new THREE.MeshBasicMaterial({ color: 0x3a4a6a }));
-  table.rotation.x = -Math.PI/2; scene.add(table);
-
-  const ground = new CANNON.Body({ mass:0, material:matTable });
-  ground.addShape(new CANNON.Plane());
-  ground.quaternion.setFromEuler(-Math.PI/2,0,0);
-  world.addBody(ground);
-
-  // ball
-  const r=0.35;
-  ballMesh = new THREE.Mesh(new THREE.SphereGeometry(r,24,16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-  scene.add(ballMesh);
-  ballBody = new CANNON.Body({
-  mass: 0.16, material: matBall,
-  linearDamping: 0.01, angularDamping: 0.01
+ballBody = new CANNON.Body({
+  mass: 1.0,                 // ← heavier
+  material: matBall,
+  linearDamping: 0.01,
+  angularDamping: 0.01
 });
 ballBody.addShape(new CANNON.Sphere(r));
-ballBody.allowSleep = false;  // ← keep it awake
+ballBody.allowSleep = false;
 world.addBody(ballBody);
-  function reset(){ ballBody.position.set(4.2,2,-7.5); ballBody.velocity.set(0,0,0); ballBody.angularVelocity.set(0,0,0); }
-  reset();
+
+function reset(){ 
+  ballBody.position.set(4.2, 2.0, -7.5);
+  ballBody.velocity.set(0,0,0);
+  ballBody.angularVelocity.set(0,0,0);
+}
+reset();
 
   // simple plunger + reset
   let pulling=false, power=0;
@@ -203,87 +192,88 @@ if (PHASE >= 3) {
 
 if (PHASE >= 4) {
   const flipLen = 2.2, flipRad = 0.25;
+  // where flippers sit (same Z as before, inside near the bottom)
+  const FLIP_Z = -8.7, FLIP_Y = 0.6, FLIP_X = 2.2; // +/- for right/left
 
+  // build a flipper that pivots on its OUTSIDE tip, and we rotate it manually
   function createFlipper(side /* -1 = left, +1 = right */) {
     const color = (side < 0) ? 0x8bc34a : 0x03a9f4;
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(flipLen, flipRad*2, flipRad*2),
-      new THREE.MeshBasicMaterial({ color })
-    );
-    mesh.position.set(side*2.2, 0.6, -8.7);
+
+    // THREE mesh with geometry translated so the pivot is at the OUTER tip
+    const g = new THREE.BoxGeometry(flipLen, flipRad*2, flipRad*2);
+    g.translate( (side < 0 ? +flipLen/2 - 0.1 : -flipLen/2 + 0.1), 0, 0 ); // pivot at outer tip
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color }));
+    mesh.position.set(side*FLIP_X, FLIP_Y, FLIP_Z);
     scene.add(mesh);
 
-    const body = new CANNON.Body({
-      mass: 1, material: matTable,
-      angularDamping: 0.75,  // more damping = less buzz
-      linearDamping:  0.25
-    });
-    body.addShape(new CANNON.Box(new CANNON.Vec3(flipLen/2, flipRad, flipRad)));
+    // CANNON kinematic body at the SAME pivot, with the shape offset the same way
+    const body = new CANNON.Body({ mass: 0 });              // kinematic: set type below
+    const shape = new CANNON.Box(new CANNON.Vec3(flipLen/2, flipRad, flipRad));
+    const offset = new CANNON.Vec3(
+      (side < 0 ? +flipLen/2 - 0.1 : -flipLen/2 + 0.1), 0, 0
+    );
+    body.addShape(shape, offset);
     body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+    body.type = CANNON.Body.KINEMATIC;                      // ← kinematic (no solver jitter)
     world.addBody(body);
 
-    // Inner tip pivot (mirrored correctly)
-    const pivotWorld = new CANNON.Vec3(
-      body.position.x + (side < 0 ? +flipLen/2 - 0.2 : -flipLen/2 + 0.2),
-      body.position.y, body.position.z
-    );
-    const anchor = new CANNON.Body({ mass:0 });
-    anchor.addShape(new CANNON.Sphere(0.01));
-    anchor.position.copy(pivotWorld);
-    world.addBody(anchor);
+    // angles in radians (rest points inward, up is +~35°)
+    const rest = (side < 0 ?  -0.22 :  +0.22);
+    const up   = (side < 0 ?  rest + 0.61 : rest - 0.61);   // ~35°
+    let target = rest; let angle = rest; const speed = 12;  // rad/s animation speed
 
-    const hinge = new CANNON.HingeConstraint(body, anchor, {
-      pivotA: body.pointToLocalFrame(pivotWorld),
-      axisA:  new CANNON.Vec3(0,1,0),
-      pivotB: new CANNON.Vec3(0,0,0),
-      axisB:  new CANNON.Vec3(0,1,0),
-      collideConnected:false
-    });
-    world.addConstraint(hinge);
-    hinge.enableMotor();
+    function setTarget(isUp){ target = isUp ? up : rest; }
 
-    // Clamp motor force hard to kill chatter
-    const MAX_FORCE = 60;                 // ↓ smaller
-    if (hinge.motorEquation) {
-      hinge.motorEquation.maxForce =  MAX_FORCE;
-      hinge.motorEquation.minForce = -MAX_FORCE;
-    }
-
-    const ctrl = {
-      rest: (side < 0 ? +0.22 : -0.22),
-      up:   (side < 0 ? -0.85 : +0.85),
-      target: 0, // set below
-      // very gentle PD + big dead-band
-      kp: 5, kd: 20,            // ↓ softer + more damping
-      maxSpeed: 3.2,            // ↓ slower
-      dead: 0.08, deadVel: 0.5  // ↑ wider stop zone
-    };
-    ctrl.target = ctrl.rest;
-
-    return { mesh, body, hinge, anchor, ctrl, side };
+    return { side, mesh, body, rest, up, targetRef:()=>target, angleRef:()=>angle,
+             setTarget, speed };
   }
 
-  leftFlip  = createFlipper(-1);
-  rightFlip = createFlipper(+1);
-  log('Flippers: OK (very tame PD)');
+  const leftFlip  = createFlipper(-1);
+  const rightFlip = createFlipper(+1);
+  log('Flippers: KINEMATIC (no constraints)');
 
-  function setFlipper(f, on){ if(!f) return; f.ctrl.target = on ? f.ctrl.up : f.ctrl.rest; }
-
+  // input
   addEventListener('keydown', e=>{
-    if(e.code==='ShiftLeft')  setFlipper(leftFlip,  true);
-    if(e.code==='ShiftRight') setFlipper(rightFlip, true);
-    if(e.code==='Space' && ballBody){
+    if(e.code==='ShiftLeft')  leftFlip.setTarget(true);
+    if(e.code==='ShiftRight') rightFlip.setTarget(true);
+    if(e.code==='Space') {
       ballBody.wakeUp && ballBody.wakeUp();
-      ballBody.applyImpulse(
-        new CANNON.Vec3((Math.random()-0.5)*1.0, 0, (Math.random()-0.5)*1.0),
-        ballBody.position
-      );
+      ballBody.applyImpulse(new CANNON.Vec3((Math.random()-0.5)*1.0,0,(Math.random()-0.5)*1.0), ballBody.position);
     }
   });
   addEventListener('keyup', e=>{
-    if(e.code==='ShiftLeft')  setFlipper(leftFlip,  false);
-    if(e.code==='ShiftRight') setFlipper(rightFlip, false);
+    if(e.code==='ShiftLeft')  leftFlip.setTarget(false);
+    if(e.code==='ShiftRight') rightFlip.setTarget(false);
   });
+
+  // ---- in LOOP: animate angles + sync KINEMATIC bodies ----
+  // put this inside your main loop, replacing the old PD drive:
+  const _driveKinematic = (fl, dt)=>{
+    // ease angle toward target
+    const target = fl.targetRef();
+    let a = fl.angleRef();
+    const maxStep = fl.speed * dt;
+    const diff = Math.max(-maxStep, Math.min(maxStep, target - a));
+    a += diff;
+
+    // set mesh rotation
+    fl.mesh.rotation.set(0, a, 0);
+
+    // set body quaternion (so the ball collides with the moving paddle)
+    const q = new CANNON.Quaternion();
+    q.setFromAxisAngle(new CANNON.Vec3(0,1,0), a);
+    fl.body.quaternion.copy(q);
+
+    // (optional) give the kinematic a pseudo angular velocity for better contact
+    fl.body.angularVelocity.set(0, diff/dt, 0);
+
+    // persist angle
+    fl.angleRef = ()=>a;
+  };
+
+  // overwrite your old "if (PHASE >= 4 && leftFlip && rightFlip) { ... }"
+  // with this:
+  world._driveFlippers = (dt)=>{ _driveKinematic(leftFlip, dt); _driveKinematic(rightFlip, dt); };
 }
 
 // --- loop (always draws cube; physics added by phase)
@@ -298,6 +288,9 @@ function loop(t){
   if (PHASE >= 2) {
     world._tick && world._tick(dt);
     world.step(fixed, dt, 8);
+
+    world._driveFlippers && world._driveFlippers(dt);
+
     ballMesh.position.copy(ballBody.position);
     ballMesh.quaternion.copy(ballBody.quaternion);
   }
