@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b16";
+const BUILD = "b17";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -82,17 +82,28 @@ let world, tiltRad, matBall, matTable, matPegs, ballMesh, ballBody, leftFlip, ri
 
 if (PHASE >= 2) {
   world = new CANNON.World();
-  tiltRad = 6 * Math.PI / 180;
-
-// Down-table = toward +Z (camera side)
-const gy = -Math.cos(tiltRad) * 9.82;
-const gz =  Math.sin(tiltRad) * 9.82;   // ← +, not −
+  // ---- PINBALL SLOPE (single source of truth) ----
+tiltRad = 12 * Math.PI / 180;         // 12° feels “real”
+const G   = 9.82;
+const gy  = -Math.cos(tiltRad) * G;   // mostly downward
+const gz  =  Math.sin(tiltRad) * G;   // “down-table” toward +Z (toward player)
 world.gravity.set(0, gy, gz);
 log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 
-// (optional) mild defaults
-world.defaultContactMaterial.friction = 0.2;
-world.defaultContactMaterial.restitution = 0.15;
+// friction/bounce (low friction on table so the ball doesn’t stick)
+world.defaultContactMaterial.friction    = 0.02;
+world.defaultContactMaterial.restitution = 0.12;
+
+matBall  = new CANNON.Material('ball');
+matTable = new CANNON.Material('table');
+matPegs  = new CANNON.Material('pegs');
+
+world.addContactMaterial(new CANNON.ContactMaterial(
+  matBall,  matTable, { friction:0.02, restitution:0.12 }
+));
+world.addContactMaterial(new CANNON.ContactMaterial(
+  matBall,  matPegs,  { friction:0.00, restitution:0.85 }
+));
 
   world.broadphase = new CANNON.SAPBroadphase(world);
   world.allowSleep = true;
@@ -116,8 +127,13 @@ world.defaultContactMaterial.restitution = 0.15;
   const r=0.35;
   ballMesh = new THREE.Mesh(new THREE.SphereGeometry(r,24,16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   scene.add(ballMesh);
-  ballBody = new CANNON.Body({ mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01 });
-  ballBody.addShape(new CANNON.Sphere(r)); world.addBody(ballBody);
+  ballBody = new CANNON.Body({
+  mass: 0.16, material: matBall,
+  linearDamping: 0.01, angularDamping: 0.01
+});
+ballBody.addShape(new CANNON.Sphere(r));
+ballBody.allowSleep = false;  // ← keep it awake
+world.addBody(ballBody);
   function reset(){ ballBody.position.set(4.2,2,-7.5); ballBody.velocity.set(0,0,0); ballBody.angularVelocity.set(0,0,0); }
   reset();
 
