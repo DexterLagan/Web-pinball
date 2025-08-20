@@ -3,73 +3,84 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Stage2 – walls + pegs</title>
+<title>Stage2 – diagnostics</title>
 <style>
   html,body{margin:0;height:100%;background:#0b0d10;overflow:hidden}
-  #ui{position:fixed;left:12px;bottom:12px;color:#cfd8dc;font:12px system-ui;z-index:3}
-  #banner{position:fixed;top:0;left:0;right:0;background:#90caf9;color:#0b0d10;font:700 14px system-ui;padding:6px;text-align:center;z-index:3}
-  #err{position:fixed;top:40px;left:0;right:0;background:#300;color:#fff;font:12px/1.4 system-ui;padding:6px;z-index:4;display:none;max-height:35vh;overflow:auto}
+  #banner{position:fixed;top:0;left:0;right:0;background:#ffd54f;color:#111;font:700 14px system-ui;padding:6px;text-align:center;z-index:5}
+  #ui{position:fixed;left:12px;bottom:12px;color:#cfd8dc;font:12px system-ui;z-index:4}
+  #err{position:fixed;top:40px;left:0;right:0;background:#300;color:#fff;font:12px/1.4 system-ui;padding:6px;z-index:6;display:none;max-height:35vh;overflow:auto}
 </style>
 </head>
 <body>
-<div id="banner">STAGE 2 — table + ball + walls + pegs</div>
+<div id="banner">JS RUNNING ✅ — Stage2 diagnostics (use two fingers to orbit/zoom)</div>
 <div id="err"></div>
-<div id="ui">S: pull plunger, release to launch · R: reset</div>
+<div id="ui">S: plunger · R: reset · FPS: <span id="fps">0</span></div>
+
 <script type="module">
-if (location.search.includes('debug')) { const s=document.createElement('script'); s.src="https://cdn.jsdelivr.net/npm/eruda@3"; s.onload=()=>eruda.init(); document.body.appendChild(s); }
+/*** DEBUG CONSOLE (eruda) ***/
+if (location.search.includes('debug')) {
+  const s=document.createElement('script'); s.src="https://cdn.jsdelivr.net/npm/eruda@3"; s.onload=()=>eruda.init(); document.body.appendChild(s);
+}
 const errBox=document.getElementById('err'); const showErr=m=>{errBox.style.display='block'; errBox.textContent+=(m+"\n");};
-addEventListener('error',e=>showErr('Error: '+e.message)); addEventListener('unhandledrejection',e=>showErr('Promise: '+(e.reason?.message||e.reason)));
+addEventListener('error',e=>showErr('Error: '+e.message));
+addEventListener('unhandledrejection',e=>showErr('Promise: '+(e.reason?.message||e.reason)));
+console.log('Booting stage2 diagnostics');
 
-import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=s2b";
-import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js?v=s2b";
-import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=s2b";
+/*** IMPORTS ***/
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js?v=s2diag";
+import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js?v=s2diag";
+import CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js?v=s2diag";
 
-const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0b0d10);
+/*** THREE SETUP ***/
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x15202b); // lighter for contrast
 const camera=new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
 camera.position.set(0,10,20); camera.lookAt(0,0,0);
-const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); 
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
+// Make the canvas visually obvious
+renderer.domElement.style.cssText='position:fixed;inset:0;border:4px solid lime';
 
-// Camera controls (to inspect the scene)
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.target.set(0, 0, 0);
-controls.update();
+// Camera controls
+const controls=new OrbitControls(camera, renderer.domElement);
+controls.enableDamping=true; controls.target.set(0,0,0); controls.update();
 
-// Always-visible sanity cube (if you see this, rendering works)
-const sanityCube = new THREE.Mesh(
-  new THREE.BoxGeometry(1,1,1),
-  new THREE.MeshBasicMaterial({ color: 0xff5555 })
-);
-sanityCube.position.set(0, 1, 0);
-scene.add(sanityCube);
+// Always-visible sanity cube
+const sanityCube=new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({color:0xff5555}));
+sanityCube.position.set(0,1,0); scene.add(sanityCube);
 
-// Make the background a touch lighter for contrast (temporary)
-scene.background = new THREE.Color(0x17202a);
-
+// Axes
 scene.add(new THREE.AxesHelper(3));
 
-const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)}); world.broadphase=new CANNON.SAPBroadphase(world); world.allowSleep=true;
-const tiltRad=THREE.MathUtils.degToRad(6); world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
+/*** CANNON SETUP ***/
+const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
+world.broadphase=new CANNON.SAPBroadphase(world); world.allowSleep=true;
+const tiltRad=THREE.MathUtils.degToRad(6);
+world.gravity.set(Math.sin(tiltRad)*9.82, -Math.cos(tiltRad)*9.82, 0);
 
-const matBall=new CANNON.Material('ball'); const matTable=new CANNON.Material('table'); const matPegs=new CANNON.Material('pegs');
+const matBall=new CANNON.Material('ball');
+const matTable=new CANNON.Material('table');
+const matPegs=new CANNON.Material('pegs');
 world.addContactMaterial(new CANNON.ContactMaterial(matBall, matTable, {friction:0.2, restitution:0.2}));
 world.addContactMaterial(new CANNON.ContactMaterial(matBall, matPegs,  {friction:0.0, restitution:0.85}));
 
+/*** TABLE + PLANE ***/
 const tableW=12, tableH=20, wallH=2, wallT=0.3;
 const table=new THREE.Mesh(new THREE.PlaneGeometry(tableW,tableH), new THREE.MeshBasicMaterial({color:0x3a4a6a}));
 table.rotation.x=-Math.PI/2; scene.add(table);
 const ground=new CANNON.Body({mass:0, material:matTable, shape:new CANNON.Plane()});
 ground.quaternion.setFromEuler(-Math.PI/2,0,0); world.addBody(ground);
 
-// walls
+/*** WALLS ***/
 const wallMatVis=new THREE.MeshBasicMaterial({color:0x6c809c});
 (function(){
   const top=new THREE.Mesh(new THREE.BoxGeometry(tableW,wallH,wallT), wallMatVis); top.position.set(0,wallH/2, tableH/2-wallT/2);
   const bot=new THREE.Mesh(new THREE.BoxGeometry(tableW,wallH,wallT), wallMatVis); bot.position.set(0,wallH/2,-tableH/2+wallT/2);
   scene.add(top,bot);
-  const bTop=new CANNON.Body({mass:0, material:matTable}); bTop.addShape(new CANNON.Box(new CANNON.Vec3(tableW/2,wallH/2,wallT/2))); bTop.position.set(top.position.x,top.position.y,top.position.z); world.addBody(bTop);
-  const bBot=new CANNON.Body({mass:0, material:matTable}); bBot.addShape(new CANNON.Box(new CANNON.Vec3(tableW/2,wallH/2,wallT/2))); bBot.position.set(bot.position.x,bot.position.y,bot.position.z); world.addBody(bBot);
+  const bTop=new CANNON.Body({mass:0, material:matTable}); bTop.addShape(new CANNON.Box(new CANNON.Vec3(tableW/2,wallH/2,wallT/2))); bTop.position.set(0,wallH/2, tableH/2-wallT/2); world.addBody(bTop);
+  const bBot=new CANNON.Body({mass:0, material:matTable}); bBot.addShape(new CANNON.Box(new CANNON.Vec3(tableW/2,wallH/2,wallT/2))); bBot.position.set(0,wallH/2,-tableH/2+wallT/2); world.addBody(bBot);
   const len=tableH, t=wallT, h=wallH;
   const l=new THREE.Mesh(new THREE.BoxGeometry(t,h,len), wallMatVis); l.position.set(-tableW/2+t/2,h/2,0);
   const r=new THREE.Mesh(new THREE.BoxGeometry(t,h,len), wallMatVis); r.position.set( tableW/2 -t/2,h/2,0);
@@ -78,7 +89,7 @@ const wallMatVis=new THREE.MeshBasicMaterial({color:0x6c809c});
   const bR=new CANNON.Body({mass:0, material:matTable}); bR.addShape(new CANNON.Box(new CANNON.Vec3(t/2,h/2,len/2))); bR.position.set(r.position.x,r.position.y,r.position.z); world.addBody(bR);
 })();
 
-// pegs
+/*** PEGS ***/
 const pegR=0.25, pegH=0.2; const pegGeom=new THREE.CylinderGeometry(pegR,pegR,pegH,12);
 function addPeg(x,z){
   const vis=new THREE.Mesh(pegGeom, new THREE.MeshBasicMaterial({color:0xffc107})); vis.position.set(x,pegH/2,z); scene.add(vis);
@@ -91,12 +102,14 @@ for(let row=0; row<5; row++){
   for(let i=0;i<cols;i++){ const x=-span/2+(i+0.5)*(span/cols)+(row%2?(span/(cols*2)):0); addPeg(x,z); }
 }
 
-// ball + plunger
+/*** BALL ***/
 const ballR=0.35;
 const ballMesh=new THREE.Mesh(new THREE.SphereGeometry(ballR,24,16), new THREE.MeshBasicMaterial({color:0xffffff})); scene.add(ballMesh);
-const ballBody=new CANNON.Body({mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01}); ballBody.addShape(new CANNON.Sphere(ballR)); world.addBody(ballBody);
+const ballBody=new CANNON.Body({mass:0.16, material:matBall, linearDamping:0.01, angularDamping:0.01});
+ballBody.addShape(new CANNON.Sphere(ballR)); world.addBody(ballBody);
 function resetBall(){ ballBody.position.set(4.2,2.0,-7.5); ballBody.velocity.set(0,0,0); ballBody.angularVelocity.set(0,0,0); } resetBall();
 
+/*** INPUT ***/
 let pulling=false, plungerPower=0;
 addEventListener('keydown', e=>{ if(e.code==='KeyS') pulling=true; if(e.code==='KeyR') resetBall(); });
 addEventListener('keyup', e=>{
@@ -106,18 +119,18 @@ addEventListener('keyup', e=>{
   }
 });
 
-let last=performance.now(); const fixed=1/120;
+/*** LOOP + FPS ***/
+let last=performance.now(); const fixed=1/120; const fpsEl=document.getElementById('fps');
 function loop(t){
   const dt=Math.min((t-last)/1000,0.033); last=t;
+  // prove RAF is running
+  fpsEl.textContent = (Math.round(1000/(dt*1000)) || 0).toString();
 
-  // Spin the sanity cube so you always see frame updates
-  sanityCube.rotation.y = t * 0.0015;
-  sanityCube.rotation.x = t * 0.0010;
+  sanityCube.rotation.y = t*0.0015; sanityCube.rotation.x = t*0.0010;
 
   if(pulling) plungerPower=Math.min(plungerPower+50*dt, 40);
   world.step(fixed, dt, 8);
-  ballMesh.position.copy(ballBody.position);
-  ballMesh.quaternion.copy(ballBody.quaternion);
+  ballMesh.position.copy(ballBody.position); ballMesh.quaternion.copy(ballBody.quaternion);
 
   controls.update();
   renderer.render(scene,camera);
@@ -125,8 +138,10 @@ function loop(t){
 }
 requestAnimationFrame(loop);
 
+/*** RESIZE ***/
 addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
 </script>
+
 <script>
   if (location.search.includes('debug')) {
     const s = document.createElement('script');
@@ -135,5 +150,6 @@ addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.up
     document.body.appendChild(s);
   }
 </script>
+
 </body>
 </html>
