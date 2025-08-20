@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b14";
+const BUILD = "b15";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -41,8 +41,9 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
 camera.position.set(0, 1.5, 3); camera.lookAt(0, 1, 0);
 
 // start near the cube, but switch to a top-down-ish view for gameplay
+// Gameplay view (player side)
 if (PHASE >= 2) {
-  camera.position.set(0, 16, 14);
+  camera.position.set(0, 16, -14);   // was +14
   camera.lookAt(0, 0, 0);
 }
 
@@ -82,14 +83,17 @@ let world, tiltRad, matBall, matTable, matPegs, ballMesh, ballBody, leftFlip, ri
 if (PHASE >= 2) {
   world = new CANNON.World();
   tiltRad = 6 * Math.PI / 180;
-// Roll ball "down-table" toward NEGATIVE Z (not to the right)
+
+// Down-table = toward +Z (camera side)
 const gy = -Math.cos(tiltRad) * 9.82;
-const gz = -Math.sin(tiltRad) * 9.82;
+const gz =  Math.sin(tiltRad) * 9.82;   // ← +, not −
 world.gravity.set(0, gy, gz);
 log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 
-  world.defaultContactMaterial.friction = 0.2;
-  world.defaultContactMaterial.restitution = 0.15;
+// (optional) mild defaults
+world.defaultContactMaterial.friction = 0.2;
+world.defaultContactMaterial.restitution = 0.15;
+
   world.broadphase = new CANNON.SAPBroadphase(world);
   world.allowSleep = true;
 
@@ -191,21 +195,21 @@ if (PHASE >= 4) {
     mesh.position.set(side*2.2, 0.6, -8.7);
     scene.add(mesh);
 
-    // Dynamic body (extra damping helps)
+    // Body (more damping = less buzz)
     const body = new CANNON.Body({
       mass: 1, material: matTable,
-      angularDamping: 0.5, linearDamping: 0.15
+      angularDamping: 0.55, linearDamping: 0.18
     });
     body.addShape(new CANNON.Box(new CANNON.Vec3(flipLen/2, flipRad, flipRad)));
     body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
     world.addBody(body);
 
-    // Fixed anchor at hinge pivot
+    // Anchor at hinge pivot
     const pivotWorld = new CANNON.Vec3(
       body.position.x + (side>0 ? -flipLen/2 + 0.2 : flipLen/2 - 0.2),
       body.position.y, body.position.z
     );
-    const anchor = new CANNON.Body({ mass:0 });
+    const anchor = new CANNON.Body({ mass: 0 });
     anchor.addShape(new CANNON.Sphere(0.01));
     anchor.position.copy(pivotWorld);
     world.addBody(anchor);
@@ -215,26 +219,28 @@ if (PHASE >= 4) {
       axisA:  new CANNON.Vec3(0,1,0),
       pivotB: new CANNON.Vec3(0,0,0),
       axisB:  new CANNON.Vec3(0,1,0),
-      collideConnected:false
+      collideConnected: false
     });
     world.addConstraint(hinge);
     hinge.enableMotor();
 
-    // Clamp motor force (prevents chatter)
-    const MAX_FORCE = 140;
+    // Clamp motor force (key for cannon.js)
+    const MAX_FORCE = 100;  // try 80–140
     if (hinge.motorEquation) {
       hinge.motorEquation.maxForce =  MAX_FORCE;
       hinge.motorEquation.minForce = -MAX_FORCE;
     }
 
-    // Control targets (radians)
+    // Control
     const ctrl = {
       rest: (side>0 ? -0.22 : 0.22),
       up:   (side>0 ?  0.85 : -0.85),
       target: (side>0 ? -0.22 : 0.22),
-      kp: 14,  // softer stiffness
-      kd: 10,  // more damping
-      maxSpeed: 7 // rad/s
+      kp: 10,   // softer stiffness
+      kd: 12,   // more damping
+      maxSpeed: 6,  // rad/s
+      dead: 0.03,   // rad dead-band
+      deadVel: 0.3  // rad/s dead-band
     };
 
     return { mesh, body, hinge, anchor, ctrl, side };
@@ -242,7 +248,7 @@ if (PHASE >= 4) {
 
   leftFlip  = createFlipper(-1);
   rightFlip = createFlipper(+1);
-  log('Flippers: OK (PD tamed)');
+  log('Flippers: OK (PD + dead-band)');
 
   function setFlipper(f, on){ if(!f) return; f.ctrl.target = on ? f.ctrl.up : f.ctrl.rest; }
 
@@ -277,16 +283,21 @@ function loop(t){
   if (PHASE >= 4 && leftFlip && rightFlip) {
   function wrapPi(a){ a=(a+Math.PI)%(2*Math.PI); return a<0?a+2*Math.PI-Math.PI:a-Math.PI; }
   function driveFlipper(f){
-    // World-space direction of the body's local +X axis
-    const vx = new CANNON.Vec3(1,0,0);
-    f.body.quaternion.vmult(vx, vx); // rotate by body orientation
-    // Angle around world Y: atan2(x, z)
-    const angle = wrapPi(Math.atan2(vx.x, vx.z));
+    // world-space direction of local +X axis
+    const ax = new CANNON.Vec3(1,0,0);
+    f.body.quaternion.vmult(ax, ax);
+    const angle = wrapPi(Math.atan2(ax.x, ax.z));   // yaw around Y
     const velY  = f.body.angularVelocity.y || 0;
 
-    const err   = wrapPi(f.ctrl.target - angle);
-    let speed   = f.ctrl.kp * err - f.ctrl.kd * velY;
-    // clamp motor speed
+    let err = wrapPi(f.ctrl.target - angle);
+
+    // Dead-band: stop motor if close & slow
+    if (Math.abs(err) < f.ctrl.dead && Math.abs(velY) < f.ctrl.deadVel) {
+      f.hinge.setMotorSpeed(0);
+      return;
+    }
+
+    let speed = f.ctrl.kp * err - f.ctrl.kd * velY;
     const m = f.ctrl.maxSpeed;
     if (speed >  m) speed =  m;
     if (speed < -m) speed = -m;
