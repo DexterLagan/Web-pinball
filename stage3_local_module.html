@@ -62,29 +62,64 @@ document.body.appendChild(renderer.domElement);
 // Put canvas ABOVE all overlays while we debug
 renderer.domElement.style.position = 'fixed';
 renderer.domElement.style.left = '0';
-renderer.domElement.style.top = '0';
+renderer.domElement.style.top  = '0';
 renderer.domElement.style.zIndex = '9999';
 renderer.domElement.style.border = '4px solid lime';
+renderer.setClearColor(0xff00ff, 1); // magenta clear
 
 // Bright magenta clear so even an empty frame is visible
 renderer.setClearColor(0xff00ff, 1);
 
-// Size using visualViewport (iPad-safe), and log values
+// Force the canvas to have real CSS size + backing store, and log everything
 function sizeNow(src){
-  const vw = (window.visualViewport ? window.visualViewport.width  : window.innerWidth)  || 1;
-  const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) || 1;
+  // Try several sources; pick the first non-zero
+  const vwCandidates = [
+    window.visualViewport && Math.round(window.visualViewport.width),
+    Math.round(document.documentElement.clientWidth),
+    Math.round(window.innerWidth),
+    Math.round(screen.width)
+  ].filter(Boolean);
+
+  const vhCandidates = [
+    window.visualViewport && Math.round(window.visualViewport.height),
+    Math.round(document.documentElement.clientHeight),
+    Math.round(window.innerHeight),
+    Math.round(screen.height)
+  ].filter(Boolean);
+
+  const vw = vwCandidates[0] || 1;
+  const vh = vhCandidates[0] || 1;
+
   const dpr = Math.min(2, window.devicePixelRatio || 1);
+
+  // 1) CSS size (so borders occupy the full screen)
+  const c = renderer.domElement;
+  c.style.width  = vw + 'px';
+  c.style.height = vh + 'px';
+
+  // 2) Attribute size (so layout engine knows the element’s dimensions)
+  c.setAttribute('width',  String(vw));
+  c.setAttribute('height', String(vh));
+
+  // 3) WebGL drawing buffer size
   renderer.setPixelRatio(dpr);
   renderer.setSize(vw, vh, false);
-  camera.aspect = vw / vh;
+
+  // Camera
+  camera.aspect = vw / Math.max(1, vh);
   camera.updateProjectionMatrix();
-  log(`↔️ resize from ${src}: vw=${vw}, vh=${vh}, dpr=${dpr}`);
+
+  // Log what the browser believes
+  const rect = c.getBoundingClientRect();
+  log(`↔️ resize ${src}: vw=${vw}, vh=${vh}, dpr=${dpr} | rect=${Math.round(rect.width)}x${Math.round(rect.height)} @ (${Math.round(rect.left)},${Math.round(rect.top)})`);
 }
+
+// call once now, then on changes
 sizeNow('boot');
 addEventListener('resize', ()=>sizeNow('window.resize'));
 if (window.visualViewport) {
-  visualViewport.addEventListener('resize', ()=>sizeNow('visualViewport.resize'));
-  visualViewport.addEventListener('scroll', ()=>sizeNow('visualViewport.scroll'));
+  visualViewport.addEventListener('resize', ()=>sizeNow('vv.resize'));
+  visualViewport.addEventListener('scroll', ()=>sizeNow('vv.scroll'));
 }
 
 // Always-visible sanity cube (proves frames are rendering)
