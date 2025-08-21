@@ -242,6 +242,7 @@ if (PHASE >= 3) {
   addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2}); // bottom
   addWallBox({x:wallT,y:wallH,z:sideLengthZ},{x:-tableW/2 + wallT/2,y:wallH/2,z:sideCenterZ}); // left
   addWallBox({x:wallT,y:wallH,z:sideLengthZ},{x: tableW/2 - wallT/2,y:wallH/2,z:sideCenterZ}); // right
+
   function addFlipperGuide(side){
     const x1 = side * (tableW/2 - wallT/2);
     const z1 = -tableH/2 + wallT/2;
@@ -257,30 +258,6 @@ if (PHASE >= 3) {
   addFlipperGuide(-1);
   addFlipperGuide(1);
 
-  function addTopArc(radius){
-    const outerR = radius + wallT/2;
-    const innerR = radius - wallT/2;
-    const shape = new THREE.Shape();
-    shape.absarc(0, 0, outerR, Math.PI, 0, false);
-    const hole = new THREE.Path();
-    hole.absarc(0, 0, innerR, 0, Math.PI, true);
-    shape.holes.push(hole);
-    const geom = new THREE.ExtrudeGeometry(shape, { depth: wallH, bevelEnabled:false });
-    const mesh = new THREE.Mesh(geom, wallMatVis);
-    mesh.rotation.x = -Math.PI/2;
-    mesh.position.set(0, wallH/2, tableH/2);
-    scene.add(mesh);
-    const verts = geom.attributes.position.array;
-    const idx = geom.index ? geom.index.array : Array.from({length: verts.length/3}, (_,i)=>i);
-    const tri = new CANNON.Trimesh(verts, idx);
-    const body = new CANNON.Body({ mass:0, material:matTable });
-    body.addShape(tri);
-    body.position.copy(mesh.position);
-    body.quaternion.copy(mesh.quaternion);
-    world.addBody(body);
-  }
-  addTopArc(arcRadius);
-
   // glass cover
   const glassY = ballRadius*2*1.33;
   const glassMesh = new THREE.Mesh(
@@ -295,6 +272,18 @@ if (PHASE >= 3) {
   glassBody.position.set(0, glassY, 0);
   glassBody.quaternion.setFromEuler(Math.PI/2,0,0);
   world.addBody(glassBody);
+
+  function addTopArc(radius, segments){
+    const step = Math.PI / segments;
+    for(let i=0;i<segments;i++){
+      const angle = step*(i+0.5);
+      const x = radius * Math.cos(angle);
+      const z = tableH/2 + radius * Math.sin(angle);
+      const len = radius * step + 0.1;
+      addWallBox({x:len,y:wallH,z:wallT},{x,y:wallH/2,z}, angle);
+    }
+  }
+  addTopArc(arcRadius, 16);
 
   // pegs
   const pegR=0.25, pegH=0.2;
