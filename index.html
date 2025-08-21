@@ -74,7 +74,7 @@ sizeNow('boot'); addEventListener('resize', ()=>sizeNow('resize'));
 
 // sanity cube + grid (always on so we SEE frames)
 const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({ color: 0xff5555 }));
-cube.position.set(0,1,0); scene.add(cube);
+cube.position.set(0,1,0); cube.visible = false; scene.add(cube);
 scene.add(new THREE.GridHelper(10,10,0x444444,0x444444));
 
 // ---- PHYSICS (phase>=2)
@@ -100,7 +100,7 @@ const tableW = 12, tableH = 20;   // keep as-is if you already have them
 
 // --- Plunger lane spawn (bottom-right) ---
 const ballRadius = 0.35;          // your current ball radius
-const LAUNCH_X =  tableW/2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
+const LAUNCH_X = -tableW/2 + 1.8; // ≈ -4.2 on a 12-wide table (near right wall)
 const LAUNCH_Z = -tableH/2 + 2.5; // ≈ -7.5 (near the bottom)
 const LAUNCH_Y =  0.8;            // slightly above the playfield
 
@@ -167,10 +167,8 @@ function launchBall(power = 18){
 }
 
 
-function reset(){ 
-  ballBody.position.set(4.2, 2.0, -7.5);
-  ballBody.velocity.set(0,0,0);
-  ballBody.angularVelocity.set(0,0,0);
+function reset(){
+  placeBallAtLauncher();
 }
 reset();
 
@@ -223,18 +221,38 @@ addEventListener('keyup', e=>{
 if (PHASE >= 3) {
   // walls
   const wallMatVis = new THREE.MeshBasicMaterial({ color: 0x6c809c });
-  function addWallBox(size,pos){
+  function addWallBox(size,pos,rotY=0){
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x,size.y,size.z), wallMatVis);
-    mesh.position.set(pos.x,pos.y,pos.z); scene.add(mesh);
+    mesh.position.set(pos.x,pos.y,pos.z);
+    mesh.rotation.y = rotY;
+    scene.add(mesh);
     const body = new CANNON.Body({ mass:0, material:matTable });
     body.addShape(new CANNON.Box(new CANNON.Vec3(size.x/2,size.y/2,size.z/2)));
-    body.position.set(pos.x,pos.y,pos.z); world.addBody(body);
+    body.position.set(pos.x,pos.y,pos.z);
+    body.quaternion.setFromEuler(0, rotY, 0);
+    world.addBody(body);
   }
   const tableW=12, tableH=20, wallH=2, wallT=0.3;
-  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z: tableH/2 - wallT/2});
-  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2});
-  addWallBox({x:wallT,y:wallH,z:tableH},{x:-tableW/2 + wallT/2,y:wallH/2,z:0});
-  addWallBox({x:wallT,y:wallH,z:tableH},{x: tableW/2 - wallT/2,y:wallH/2,z:0});
+  const arcRadius = tableW/2;
+  const arcTopZ = tableH/2 + arcRadius;
+  const sideLengthZ = arcTopZ - (-tableH/2);
+  const sideCenterZ = (-tableH/2 + arcTopZ) / 2;
+
+  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2}); // bottom
+  addWallBox({x:wallT,y:wallH,z:sideLengthZ},{x:-tableW/2 + wallT/2,y:wallH/2,z:sideCenterZ}); // left
+  addWallBox({x:wallT,y:wallH,z:sideLengthZ},{x: tableW/2 - wallT/2,y:wallH/2,z:sideCenterZ}); // right
+
+  function addTopArc(radius, segments){
+    const step = Math.PI / segments;
+    for(let i=0;i<segments;i++){
+      const angle = step*(i+0.5);
+      const x = radius * Math.cos(angle);
+      const z = tableH/2 + radius * Math.sin(angle);
+      const len = radius * step + 0.1;
+      addWallBox({x:len,y:wallH,z:wallT},{x,y:wallH/2,z}, angle);
+    }
+  }
+  addTopArc(arcRadius, 16);
 
   // pegs
   const pegR=0.25, pegH=0.2;
@@ -354,9 +372,8 @@ let frames=0, last=performance.now(); const fixed=1/120;
 function loop(t){
   const dt=Math.min((t-last)/1000,0.033); last=t;
 
-  frames++; 
+  frames++;
   // if (frames%30===0) log(`frame ${frames}`);
-  cube.rotation.y = t*0.0015; cube.rotation.x = t*0.001;
 
   if (PHASE >= 2) {
     world._tick && world._tick(dt);
