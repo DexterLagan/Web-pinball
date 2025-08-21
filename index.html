@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b27";
+const BUILD = "b29";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -96,16 +96,26 @@ world.gravity.set(0, gy, gz);
 log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 
 // ---- TABLE VISUAL ----
-const tableW = 12, tableH = 20;   // keep as-is if you already have them
+const tableW = 12, tableH = 20;   // playfield size
+const wallT = 0.3;                // wall thickness
 
 // --- Plunger lane spawn (bottom-right) ---
-const ballRadius = 0.35;          // your current ball radius
-const LAUNCH_X =  tableW/2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
-const LAUNCH_Z = -tableH/2 + 2.5; // ≈ -7.5 (near the bottom)
-const LAUNCH_Y =  0.8;            // slightly above the playfield
+const ballRadius = 0.35;          // current ball radius
+const LAUNCH_X =  tableW/2 - wallT - ballRadius - 0.2;
+const LAUNCH_Z = -tableH/2 + wallT + ballRadius + 0.2;
+const LAUNCH_Y =  ballRadius + 0.15; // under glass cover
 
+// playfield with rounded top
+const arcR = tableW/2 - wallT/2;
+const arcCenterZ = tableH/2 - wallT/2;
+const playShape = new THREE.Shape();
+playShape.moveTo(-tableW/2, -tableH/2);
+playShape.lineTo(-tableW/2, arcCenterZ - arcR);
+playShape.absarc(0, arcCenterZ, arcR, Math.PI, 0, false);
+playShape.lineTo(tableW/2, -tableH/2);
+playShape.lineTo(-tableW/2, -tableH/2);
 const table = new THREE.Mesh(
-  new THREE.PlaneGeometry(tableW, tableH),
+  new THREE.ShapeGeometry(playShape),
   new THREE.MeshBasicMaterial({ color: 0x3a4a6a })
 );
 table.rotation.x = -Math.PI/2;          // lay flat
@@ -167,74 +177,68 @@ function launchBall(power = 18){
 }
 
 
-function reset(){ 
-  ballBody.position.set(4.2, 2.0, -7.5);
-  ballBody.velocity.set(0,0,0);
-  ballBody.angularVelocity.set(0,0,0);
+function reset(){
+  placeBallAtLauncher();
 }
 reset();
 
-  // simple plunger + reset
-  let pulling=false, power=0;
-
-  // addEventListener('keydown', e=>{ if(e.code==='KeyS') pulling=true; if(e.code==='KeyR') reset(); });
-  // addEventListener('keyup', e=>{
-  //   if(e.code==='KeyS'){
-  //     pulling=false;
-  //     ballBody.applyImpulse(new CANNON.Vec3(-Math.sin(tiltRad)*power*0.6, Math.cos(tiltRad)*power*0.6, power), ballBody.position);
-  //     power=0;
-  //   }
-  // });
-
-  // SPACE → plunger launch (cooldown to avoid repeats)
-let lastLaunch = 0;
-
-addEventListener('keydown', e=>{
-  if (e.code === 'ShiftLeft')  leftFlip.setTarget(true);
-  if (e.code === 'ShiftRight') rightFlip.setTarget(true);
-
-  if (e.code === 'Space') {
-    const now = performance.now();
-    if (now - lastLaunch > 300) {   // simple cooldown to avoid spam
-      launchBall(20);               // tweak 14–22 to taste
-      lastLaunch = now;
+  // keyboard state
+  let lastLaunch = 0;
+  const keys = new Set();
+  addEventListener('keydown', e=>{
+    keys.add(e.code);
+    if (e.code === 'Space') {
+      const now = performance.now();
+      if (now - lastLaunch > 300) {
+        launchBall(20);
+        lastLaunch = now;
+      }
     }
-  }
-});
+    if (e.code === 'KeyR') reset();
+  });
+  addEventListener('keyup', e=>{ keys.delete(e.code); });
 
-addEventListener('keyup', e=>{
-  if (e.code === 'ShiftLeft')  leftFlip.setTarget(false);
-  if (e.code === 'ShiftRight') rightFlip.setTarget(false);
-});
-
-  // keep power increasing each frame while held
-  ballBody._plungerState = { pulling:false, power:0 };
-  addEventListener('keydown', e=>{ if(e.code==='KeyS') ballBody._plungerState.pulling=true; });
-  addEventListener('keyup',   e=>{ if(e.code==='KeyS'){ ballBody._plungerState.pulling=false; } });
-
-  // store in world so loop can access
-  world._tick = (dt)=>{
-    const st = ballBody._plungerState;
-    if(st.pulling) st.power = Math.min(st.power + 50*dt, 40);
-    else st.power = Math.max(st.power, 0);
-  };
+  // expose for loop
+  world._keys = keys;
 }
 
 if (PHASE >= 3) {
   // walls
   const wallMatVis = new THREE.MeshBasicMaterial({ color: 0x6c809c });
-  function addWallBox(size,pos){
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x,size.y,size.z), wallMatVis);
-    mesh.position.set(pos.x,pos.y,pos.z); scene.add(mesh);
+  function addWallBox(size,pos,rotY=0){
+    const geom = new THREE.BoxGeometry(size.x,size.y,size.z);
+    const mesh = new THREE.Mesh(geom, wallMatVis);
+    mesh.position.set(pos.x,pos.y,pos.z);
+    mesh.rotation.y = rotY;
+    scene.add(mesh);
     const body = new CANNON.Body({ mass:0, material:matTable });
     body.addShape(new CANNON.Box(new CANNON.Vec3(size.x/2,size.y/2,size.z/2)));
-    body.position.set(pos.x,pos.y,pos.z); world.addBody(body);
+    body.position.set(pos.x,pos.y,pos.z);
+    body.quaternion.setFromEuler(0, rotY, 0);
+    world.addBody(body);
   }
-  const tableW=12, tableH=20, wallH=2, wallT=0.3;
-  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z: tableH/2 - wallT/2});
+  const wallH=2;
+  // bottom, left, right walls remain rectangular
   addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2});
   addWallBox({x:wallT,y:wallH,z:tableH},{x:-tableW/2 + wallT/2,y:wallH/2,z:0});
   addWallBox({x:wallT,y:wallH,z:tableH},{x: tableW/2 - wallT/2,y:wallH/2,z:0});
+
+  // semi-circular top wall as single mesh
+  const wallShape = new THREE.Shape();
+  wallShape.absarc(0,0,arcR + wallT/2, Math.PI, 0, false);
+  const wallHole = new THREE.Path();
+  wallHole.absarc(0,0,arcR - wallT/2, Math.PI, 0, true);
+  wallShape.holes.push(wallHole);
+  const wallGeom = new THREE.ExtrudeGeometry(wallShape,{ depth: wallH, bevelEnabled:false, curveSegments:32 });
+  wallGeom.rotateX(Math.PI/2);
+  wallGeom.translate(0, wallH/2, arcCenterZ);
+  const topWall = new THREE.Mesh(wallGeom, wallMatVis);
+  scene.add(topWall);
+  const verts = wallGeom.attributes.position.array;
+  const idx = wallGeom.index.array;
+  const topBody = new CANNON.Body({ mass:0, material:matTable });
+  topBody.addShape(new CANNON.Trimesh(verts, idx));
+  world.addBody(topBody);
 
   // pegs
   const pegR=0.25, pegH=0.2;
@@ -253,6 +257,21 @@ if (PHASE >= 3) {
       addPeg(x, z);
     }
   }
+
+  // glass cover to keep ball on table
+  const glassY = ballRadius * 2 * 1.3;
+  const glass = new THREE.Mesh(
+    new THREE.PlaneGeometry(tableW + wallT*2, tableH + arcR),
+    new THREE.MeshBasicMaterial({ color:0x99aaff, transparent:true, opacity:0.15, side:THREE.DoubleSide })
+  );
+  glass.rotation.x = -Math.PI/2;
+  glass.position.y = glassY;
+  scene.add(glass);
+  const glassBody = new CANNON.Body({ mass:0, material:matTable });
+  glassBody.addShape(new CANNON.Plane());
+  glassBody.position.set(0, glassY, 0);
+  glassBody.quaternion.setFromEuler(Math.PI/2, 0, 0);
+  world.addBody(glassBody);
 }
 
 if (PHASE >= 4) {
@@ -302,22 +321,7 @@ const speed = 14;  // snappy flip
   log('Flippers: KINEMATIC (no constraints)');
 
   // input
-  addEventListener('keydown', e=>{
-  if (e.code === 'ShiftLeft')  rightFlip.setTarget(true);
-  if (e.code === 'ShiftRight') leftFlip.setTarget(true);
-  if (e.code === 'Space') {
-    ballBody.wakeUp && ballBody.wakeUp();
-    ballBody.applyImpulse(
-      new CANNON.Vec3((Math.random()-0.5)*1.0, 0, (Math.random()-0.5)*1.0),
-      ballBody.position
-    );
-  }
-});
-
-addEventListener('keyup', e=>{
-  if (e.code === 'ShiftLeft')  rightFlip.setTarget(false);
-  if (e.code === 'ShiftRight') leftFlip.setTarget(false);
-});
+  // input handled globally via world._keys
 
   // ---- in LOOP: animate angles + sync KINEMATIC bodies ----
   // put this inside your main loop, replacing the old PD drive:
@@ -362,40 +366,16 @@ function loop(t){
     world._tick && world._tick(dt);
     world.step(fixed, dt, 8);
 
-    world._driveFlippers && world._driveFlippers(dt);
+    if (PHASE >= 4 && leftFlip && rightFlip) {
+      const keys = world._keys || new Set();
+      leftFlip.setTarget(keys.has('ShiftLeft'));
+      rightFlip.setTarget(keys.has('ShiftRight'));
+      world._driveFlippers && world._driveFlippers(dt);
+    }
 
     ballMesh.position.copy(ballBody.position);
     ballMesh.quaternion.copy(ballBody.quaternion);
   }
-
-  if (PHASE >= 4 && leftFlip && rightFlip) {
-  function wrapPi(a){ a=(a+Math.PI)%(2*Math.PI); return a<0?a+2*Math.PI-Math.PI:a-Math.PI; }
-  function driveFlipper(f){
-    const ax = new CANNON.Vec3(1,0,0);
-    f.body.quaternion.vmult(ax, ax);
-    const angle = wrapPi(Math.atan2(ax.x, ax.z));
-    const velY  = f.body.angularVelocity.y || 0;
-
-    let err = wrapPi(f.ctrl.target - angle);
-    if (Math.abs(err) < f.ctrl.dead && Math.abs(velY) < f.ctrl.deadVel) {
-      f.hinge.setMotorSpeed(0);
-      return;
-    }
-
-    let speed = f.ctrl.kp * err - f.ctrl.kd * velY;
-    const m = f.ctrl.maxSpeed;
-    if (speed >  m) speed =  m;
-    if (speed < -m) speed = -m;
-    f.hinge.setMotorSpeed(speed);
-  }
-  driveFlipper(leftFlip);
-  driveFlipper(rightFlip);
-
-  leftFlip.mesh.position.copy(leftFlip.body.position);
-  leftFlip.mesh.quaternion.copy(leftFlip.body.quaternion);
-  rightFlip.mesh.position.copy(rightFlip.body.position);
-  rightFlip.mesh.quaternion.copy(rightFlip.body.quaternion);
-}
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
