@@ -217,7 +217,8 @@ if (PHASE >= 3) {
     body.quaternion.setFromEuler(0, rotY, 0);
     world.addBody(body);
   }
-  const wallH=2;
+  const tableW=12, tableH=20, wallH=2, wallT=0.3;
+
   // bottom, left, right walls remain rectangular
   addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2});
   addWallBox({x:wallT,y:wallH,z:tableH},{x:-tableW/2 + wallT/2,y:wallH/2,z:0});
