@@ -1,7 +1,9 @@
 # 🤖 AGENTS.md
 
-This file documents the **development history**, **lessons learned**, **precise specifications**, and **visual layout** of the Web Pinball prototype.  
+This file documents the **development history**, **lessons learned**, **precise specifications**, and **visual layout** of the Web Pinball prototype.
 It is intended as a **guide for autonomous agents or future developers** (Codex, Copilot, ChatGPT, etc.) who may continue the project.
+
+Current code is consolidated into a single `index.html` entry point; legacy stage HTML files have been removed.
 
 ---
 
@@ -39,6 +41,10 @@ The project evolved incrementally through several "stages":
 7. **Ball Physics**
    - Needed heavier mass and tilted table.
    - Lesson: model steel ball with realistic mass.
+
+8. **Consolidation**
+   - Merged stage prototypes into a single `index.html`.
+   - Simplified the project to one entry point.
 
 ---
 
@@ -137,10 +143,7 @@ Legend:
 
 - Always print `BUILD: bXX | PHASE: Y` on boot.
 - Use `?v=NN` query to force GitHub Pages refresh.
-- Quick tests:
-  - Stage1 → cube
-  - Stage2 → ball + table
-  - Stage3 → incremental merge
+- Entry point is `index.html`; legacy stage demos have been removed.
 
 ---
 
@@ -149,6 +152,6 @@ Legend:
 - Rendering: Three.js (r161)  
 - Physics: Cannon.js  
 - Environment: GitHub Codespaces on iPad Pro (Safari)  
-- Debugging: floating HTML console overlay  
+- Debugging: floating HTML console overlay
 
 ---

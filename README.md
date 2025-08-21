@@ -43,21 +43,13 @@ Runs entirely in the browser — no plugins, no installs. Just open the demo pag
     Web-pinball/
     │
     ├── index.html                 # main prototype
-    ├── stage1.html                # spinning-cube sanity check
-    ├── stage2.html                # table + ball + walls + pegs
-    ├── stage3_merge.html          # phased bring-up (debug helper)
-    ├── stage3_local_module.html   # local ESM import version
-    │
     ├── vendor/                    # vendored dependencies (local copies)
     │   ├── three.min.js
     │   └── cannon.min.js
-    │
-    ├── assets/                    # (future: sounds, textures)
     └── README.md
 
 Notes:
 - `vendor/` contains local builds of Three.js and Cannon.js because CDNs may be blocked or slow.
-- The phased pages (stage1/2/3) were used to bring up rendering and physics incrementally.
 - `index.html` hosts the current integrated prototype.
 
 ---
@@ -118,8 +110,6 @@ Notes:
   - Open DevTools console (on iPad: Safari → Share → “Request Desktop Website” → “Show Web Inspector” or use `alert`/on-page log).
 - **Green border only on left/top**
   - Canvas was 0×0 or mis-sized. This repo uses robust iPad-safe sizing (DPR locked to 1, explicit CSS width/height, visualViewport fallback).
-- **Nothing renders but no errors**
-  - Try the sanity page: `/stage1.html?v=1` (spinning cube).
 - **GitHub Pages shows old code**
   - Add a cache-buster `?v=NN` or force-reload.
 
