@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b27";
+const BUILD = "b28";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -223,18 +223,37 @@ addEventListener('keyup', e=>{
 if (PHASE >= 3) {
   // walls
   const wallMatVis = new THREE.MeshBasicMaterial({ color: 0x6c809c });
-  function addWallBox(size,pos){
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x,size.y,size.z), wallMatVis);
-    mesh.position.set(pos.x,pos.y,pos.z); scene.add(mesh);
+  function addWallBox(size,pos,rotY=0){
+    const geom = new THREE.BoxGeometry(size.x,size.y,size.z);
+    const mesh = new THREE.Mesh(geom, wallMatVis);
+    mesh.position.set(pos.x,pos.y,pos.z);
+    mesh.rotation.y = rotY;
+    scene.add(mesh);
     const body = new CANNON.Body({ mass:0, material:matTable });
     body.addShape(new CANNON.Box(new CANNON.Vec3(size.x/2,size.y/2,size.z/2)));
-    body.position.set(pos.x,pos.y,pos.z); world.addBody(body);
+    body.position.set(pos.x,pos.y,pos.z);
+    body.quaternion.setFromEuler(0, rotY, 0);
+    world.addBody(body);
   }
   const tableW=12, tableH=20, wallH=2, wallT=0.3;
-  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z: tableH/2 - wallT/2});
+  // bottom, left, right walls remain rectangular
   addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2});
   addWallBox({x:wallT,y:wallH,z:tableH},{x:-tableW/2 + wallT/2,y:wallH/2,z:0});
   addWallBox({x:wallT,y:wallH,z:tableH},{x: tableW/2 - wallT/2,y:wallH/2,z:0});
+
+  // semi-circular top wall
+  const arcInnerR = tableW/2 - wallT/2;          // radius to inner wall face
+  const arcCenterZ = tableH/2 - wallT/2;         // align with side wall ends
+  const segments = 16;
+  const segAngle = Math.PI / segments;
+  const segLen = (arcInnerR + wallT/2) * segAngle + 0.01; // slight overlap
+  for (let i = 0; i < segments; i++) {
+    const theta = segAngle * (i + 0.5); // center angle
+    const r = arcInnerR + wallT/2;       // radius to box center
+    const x = r * Math.cos(theta);
+    const z = arcCenterZ + r * Math.sin(theta);
+    addWallBox({ x: wallT, y: wallH, z: segLen }, { x, y: wallH / 2, z }, theta);
+  }
 
   // pegs
   const pegR=0.25, pegH=0.2;
