@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b27";
+const BUILD = "b28";
 const params = new URLSearchParams(location.search);
 const PHASE = Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -74,11 +74,12 @@ sizeNow('boot'); addEventListener('resize', ()=>sizeNow('resize'));
 
 // sanity cube + grid (always on so we SEE frames)
 const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({ color: 0xff5555 }));
-cube.position.set(0,1,0); scene.add(cube);
+cube.position.set(0,1,0); cube.visible = false; scene.add(cube);
 scene.add(new THREE.GridHelper(10,10,0x444444,0x444444));
 
 // ---- PHYSICS (phase>=2)
 let world, tiltRad, matBall, matTable, matPegs, ballMesh, ballBody, leftFlip, rightFlip;
+const FLIP_Z = -8.7, FLIP_Y = 0.6, FLIP_X = 2.2; // flipper placement
 
 if (PHASE >= 2) {
 
@@ -100,7 +101,7 @@ const tableW = 12, tableH = 20;   // keep as-is if you already have them
 
 // --- Plunger lane spawn (bottom-right) ---
 const ballRadius = 0.35;          // your current ball radius
-const LAUNCH_X =  tableW/2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
+const LAUNCH_X = -tableW/2 + 1.8; // ≈ -4.2 on a 12-wide table (near right wall)
 const LAUNCH_Z = -tableH/2 + 2.5; // ≈ -7.5 (near the bottom)
 const LAUNCH_Y =  0.8;            // slightly above the playfield
 
@@ -167,10 +168,8 @@ function launchBall(power = 18){
 }
 
 
-function reset(){ 
-  ballBody.position.set(4.2, 2.0, -7.5);
-  ballBody.velocity.set(0,0,0);
-  ballBody.angularVelocity.set(0,0,0);
+function reset(){
+  placeBallAtLauncher();
 }
 reset();
 
@@ -223,18 +222,79 @@ addEventListener('keyup', e=>{
 if (PHASE >= 3) {
   // walls
   const wallMatVis = new THREE.MeshBasicMaterial({ color: 0x6c809c });
-  function addWallBox(size,pos){
+  function addWallBox(size,pos,rotY=0){
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x,size.y,size.z), wallMatVis);
-    mesh.position.set(pos.x,pos.y,pos.z); scene.add(mesh);
+    mesh.position.set(pos.x,pos.y,pos.z);
+    mesh.rotation.y = rotY;
+    scene.add(mesh);
     const body = new CANNON.Body({ mass:0, material:matTable });
     body.addShape(new CANNON.Box(new CANNON.Vec3(size.x/2,size.y/2,size.z/2)));
-    body.position.set(pos.x,pos.y,pos.z); world.addBody(body);
+    body.position.set(pos.x,pos.y,pos.z);
+    body.quaternion.setFromEuler(0, rotY, 0);
+    world.addBody(body);
   }
   const tableW=12, tableH=20, wallH=2, wallT=0.3;
-  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z: tableH/2 - wallT/2});
-  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2});
-  addWallBox({x:wallT,y:wallH,z:tableH},{x:-tableW/2 + wallT/2,y:wallH/2,z:0});
-  addWallBox({x:wallT,y:wallH,z:tableH},{x: tableW/2 - wallT/2,y:wallH/2,z:0});
+  const arcRadius = tableW/2;
+  const arcTopZ = tableH/2 + arcRadius;
+  const sideLengthZ = arcTopZ - (-tableH/2);
+  const sideCenterZ = (-tableH/2 + arcTopZ) / 2;
+
+  addWallBox({x:tableW,y:wallH,z:wallT},{x:0,y:wallH/2,z:-tableH/2 + wallT/2}); // bottom
+  addWallBox({x:wallT,y:wallH,z:sideLengthZ},{x:-tableW/2 + wallT/2,y:wallH/2,z:sideCenterZ}); // left
+  addWallBox({x:wallT,y:wallH,z:sideLengthZ},{x: tableW/2 - wallT/2,y:wallH/2,z:sideCenterZ}); // right
+  function addFlipperGuide(side){
+    const x1 = side * (tableW/2 - wallT/2);
+    const z1 = -tableH/2 + wallT/2;
+    const x2 = side * FLIP_X;
+    const z2 = FLIP_Z;
+    const dx = x2 - x1, dz = z2 - z1;
+    const len = Math.hypot(dx, dz);
+    const midX = (x1 + x2) / 2;
+    const midZ = (z1 + z2) / 2;
+    const angle = Math.atan2(dz, dx);
+    addWallBox({x:len,y:wallH,z:wallT},{x:midX,y:wallH/2,z:midZ}, angle);
+  }
+  addFlipperGuide(-1);
+  addFlipperGuide(1);
+
+  function addTopArc(radius){
+    const outerR = radius + wallT/2;
+    const innerR = radius - wallT/2;
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, outerR, Math.PI, 0, false);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, innerR, 0, Math.PI, true);
+    shape.holes.push(hole);
+    const geom = new THREE.ExtrudeGeometry(shape, { depth: wallH, bevelEnabled:false });
+    const mesh = new THREE.Mesh(geom, wallMatVis);
+    mesh.rotation.x = -Math.PI/2;
+    mesh.position.set(0, wallH/2, tableH/2);
+    scene.add(mesh);
+    const verts = geom.attributes.position.array;
+    const idx = geom.index ? geom.index.array : Array.from({length: verts.length/3}, (_,i)=>i);
+    const tri = new CANNON.Trimesh(verts, idx);
+    const body = new CANNON.Body({ mass:0, material:matTable });
+    body.addShape(tri);
+    body.position.copy(mesh.position);
+    body.quaternion.copy(mesh.quaternion);
+    world.addBody(body);
+  }
+  addTopArc(arcRadius);
+
+  // glass cover
+  const glassY = ballRadius*2*1.33;
+  const glassMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(tableW, tableH),
+    new THREE.MeshBasicMaterial({ color:0x8899ff, opacity:0.1, transparent:true })
+  );
+  glassMesh.rotation.x = -Math.PI/2;
+  glassMesh.position.set(0, glassY, 0);
+  scene.add(glassMesh);
+  const glassBody = new CANNON.Body({ mass:0, material:matTable });
+  glassBody.addShape(new CANNON.Plane());
+  glassBody.position.set(0, glassY, 0);
+  glassBody.quaternion.setFromEuler(Math.PI/2,0,0);
+  world.addBody(glassBody);
 
   // pegs
   const pegR=0.25, pegH=0.2;
@@ -257,8 +317,7 @@ if (PHASE >= 3) {
 
 if (PHASE >= 4) {
   const flipLen = 2.2, flipRad = 0.25;
-  // where flippers sit (same Z as before, inside near the bottom)
-  const FLIP_Z = -8.7, FLIP_Y = 0.6, FLIP_X = 2.2; // +/- for right/left
+  // flipper geometry uses shared FLIP_X/FLIP_Y/FLIP_Z constants
 
   // build a flipper that pivots on its OUTSIDE tip, and we rotate it manually
   function createFlipper(side /* -1 = left, +1 = right */) {
@@ -354,9 +413,8 @@ let frames=0, last=performance.now(); const fixed=1/120;
 function loop(t){
   const dt=Math.min((t-last)/1000,0.033); last=t;
 
-  frames++; 
+  frames++;
   // if (frames%30===0) log(`frame ${frames}`);
-  cube.rotation.y = t*0.0015; cube.rotation.x = t*0.001;
 
   if (PHASE >= 2) {
     world._tick && world._tick(dt);
