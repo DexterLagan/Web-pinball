@@ -100,9 +100,10 @@ const tableW = 12, tableH = 20;   // keep as-is if you already have them
 
 // --- Plunger lane spawn (bottom-right) ---
 const ballRadius = 0.35;          // your current ball radius
-const LAUNCH_X =  tableW/2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
-const LAUNCH_Z = -tableH/2 + 2.5; // ≈ -7.5 (near the bottom)
-const LAUNCH_Y =  0.8;            // slightly above the playfield
+// Launcher position along bottom-right lane
+const LAUNCH_X =  tableW / 2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
+const LAUNCH_Z = -tableH / 2 + 2.5; // ≈ -7.5 (near the bottom)
+const LAUNCH_Y =  0.8;              // slightly above the playfield
 
 const table = new THREE.Mesh(
   new THREE.PlaneGeometry(tableW, tableH),
@@ -167,10 +168,9 @@ function launchBall(power = 18){
 }
 
 
-function reset(){ 
-  ballBody.position.set(4.2, 2.0, -7.5);
-  ballBody.velocity.set(0,0,0);
-  ballBody.angularVelocity.set(0,0,0);
+function reset(){
+  // Start the ball in the bottom-right launcher lane
+  placeBallAtLauncher();
 }
 reset();
 
