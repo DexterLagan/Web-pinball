@@ -99,11 +99,12 @@ log(`gravity set to (0, ${gy.toFixed(3)}, ${gz.toFixed(3)})`);
 const tableW = 12, tableH = 20;   // keep as-is if you already have them
 
 // --- Plunger lane spawn (bottom-right) ---
-const ballRadius = 0.35;          // your current ball radius
+const ballRadius = 0.35;          // current ball radius
+const glassY = ballRadius * 2 * 1.3; // glass ~30% higher than ball
 // Launcher position along bottom-right lane
 const LAUNCH_X =  tableW / 2 - 1.8; // ≈ +4.2 on a 12-wide table (near right wall)
 const LAUNCH_Z = -tableH / 2 + 2.5; // ≈ -7.5 (near the bottom)
-const LAUNCH_Y =  0.8;              // slightly above the playfield
+const LAUNCH_Y = Math.min(0.8, glassY - ballRadius - 0.05); // keep below glass
 
 const table = new THREE.Mesh(
   new THREE.PlaneGeometry(tableW, tableH),
@@ -137,8 +138,7 @@ world.addContactMaterial(new CANNON.ContactMaterial(
 ));
 
 // ---- BALL (heavier, never sleeps) ----
-const r = 0.35;
-ballMesh = new THREE.Mesh(new THREE.SphereGeometry(r,24,16),
+ballMesh = new THREE.Mesh(new THREE.SphereGeometry(ballRadius,24,16),
                           new THREE.MeshBasicMaterial({ color: 0xffffff }));
 scene.add(ballMesh);
 
@@ -148,7 +148,7 @@ ballBody = new CANNON.Body({
   linearDamping: 0.01,
   angularDamping: 0.01
 });
-ballBody.addShape(new CANNON.Sphere(r));
+ballBody.addShape(new CANNON.Sphere(ballRadius));
 ballBody.allowSleep = false;
 world.addBody(ballBody);
 
@@ -254,6 +254,21 @@ if (PHASE >= 3) {
     const z = arcCenterZ + r * Math.sin(theta);
     addWallBox({ x: wallT, y: wallH, z: segLen }, { x, y: wallH / 2, z }, theta);
   }
+
+  // glass cover to keep the ball inside
+  const glassMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(tableW, tableH),
+    new THREE.MeshBasicMaterial({ color: 0x99bbff, transparent:true, opacity:0.15, side: THREE.DoubleSide })
+  );
+  glassMesh.rotation.x = Math.PI/2;
+  glassMesh.position.set(0, glassY, 0);
+  scene.add(glassMesh);
+
+  const glassBody = new CANNON.Body({ mass:0, material: matTable });
+  glassBody.addShape(new CANNON.Plane());
+  glassBody.quaternion.setFromEuler(Math.PI/2, 0, 0); // normal downward
+  glassBody.position.set(0, glassY, 0);
+  world.addBody(glassBody);
 
   // pegs
   const pegR=0.25, pegH=0.2;
