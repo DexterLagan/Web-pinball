@@ -18,7 +18,7 @@
 <script src="./vendor/cannon.min.js"></script>
 
 <script type="module">
-const BUILD = "b32";
+const BUILD = "b33";
 const params = new URLSearchParams(location.search);
 const PHASE = 4 //  Number(params.get('phase') || 1); // 1..4
 const logEl = document.getElementById('log');
@@ -101,7 +101,7 @@ const tableW = 12, tableH = 20;   // keep as-is if you already have them
 // --- Plunger lane spawn (bottom-right) ---
 const ballRadius = 0.35;          // your current ball radius
 // Launcher position along bottom-right lane
-const LAUNCH_X = -tableW / 2 - 2; // ≈ +4.2 on a 12-wide table (near right wall)
+const LAUNCH_X = -tableW / 2 + 2.5; // ≈ +4.2 on a 12-wide table (near right wall)
 const LAUNCH_Z = -tableH / 2 + 2.5; // ≈ -7.5 (near the bottom)
 const LAUNCH_Y =  0.8;              // slightly above the playfield
 
